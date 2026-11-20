@@ -4,9 +4,7 @@
 // store.
 
 import { describe, it, expect, vi } from 'vitest';
-import { createCommands } from '../src/commands.ts';
-
-type Handler = (args: string, ctx: any) => Promise<void>;
+import { registerRouterCommand } from './helpers/router-command.ts';
 
 function setup(cache: Record<string, unknown>): {
   run: (args: string) => Promise<string[]>;
@@ -14,28 +12,11 @@ function setup(cache: Record<string, unknown>): {
   saveCache: ReturnType<typeof vi.fn>;
   description: () => string;
 } {
-  let handler: Handler | undefined;
-  let complete: ((prefix: string) => Array<{ value: string }> | null) | undefined;
-  let description = '';
   const saveCache = vi.fn();
-  const rt: any = {
-    pi: {
-      registerCommand: (name: string, def: any) => {
-        if (name === 'router') {
-          handler = def.handler;
-          complete = def.getArgumentCompletions;
-          description = def.description ?? '';
-        }
-      },
-    },
-    load: () => {},
-    sessionCtx: undefined,
-    router: { setSessionCtx: () => {} },
-    cfg: { model_groups: {} },
-    cache,
-    cacheManager: { saveCache },
-  };
-  createCommands(rt);
+  const def = registerRouterCommand({ cache, cacheManager: { saveCache } });
+  const handler = def.handler;
+  const complete = def.getArgumentCompletions;
+  const description = def.description ?? '';
   return {
     run: async (args: string) => {
       const notes: string[] = [];

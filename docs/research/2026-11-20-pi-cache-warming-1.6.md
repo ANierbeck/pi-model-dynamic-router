@@ -1,6 +1,9 @@
 # Pi 1.6.0 cache warming vs. router group models
 
-**Status:** research note. Owner decision 2026-11-20: the user's Pi setting must be honored — Option A is rejected; follow-up plan [`2026-11-20-honor-pi-cache-warming.md`](../plans/2026-11-20-honor-pi-cache-warming.md) (pass-through to Pi's warmer instead of Option B/C).
+**Status:** research note. Owner decision 2026-11-20: the user's Pi setting must be honored — Option A is rejected; follow-up plan [`2026-11-20-honor-pi-cache-warming.md`](../plans/2026-11-20-honor-pi-cache-warming.md) (pass-through to Pi's warmer instead of Option B/C). The recommendation below is
+superseded by that plan: implemented 2026-11-20 as Option B plus the missing piece B
+lacked — Pi's warm requests are recognized and pinned to the model that served the
+session's last request.
 **Verified against:** pi-coding-agent 1.6.0 (`dist/core/cache-warmer.js`,
 `dist/core/sdk.js`, `docs/settings.md`, `docs/extensions.md`); repo `main` @ fbb8e93.
 

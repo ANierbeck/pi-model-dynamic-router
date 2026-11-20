@@ -12,6 +12,11 @@ import { setPiRegisteredProviders, setModelRegistry } from './metrics.ts';
 import { buildOllamaProviderModels } from './ollama-context.ts';
 import { PI_BUILTIN_PROVIDER_IDS } from './providers.ts';
 import type { Cache, Config, Metrics } from './types.ts';
+import {
+  UNDECLARED_CACHE_ECONOMICS,
+  sameCacheEconomics,
+  type DeclaredCacheEconomics,
+} from './cache-warming.ts';
 import type {
   Api,
   Model,
@@ -106,6 +111,25 @@ type RegistryModel = Model<Api> & {
 export interface GroupRegistration {
   registerGroupProviders: () => void;
   registerGroupModels: (ctx: ExtensionContext) => void;
+  /**
+   * Declare the cache economics of the model that served a request on the
+   * group model Pi asked for (`groupName`/`modelId`), so Pi's CacheWarmer
+   * can judge a warm (docs/plans/2026-11-20-honor-pi-cache-warming.md,
+   * step 1). Re-registers the group provider only when the declaration
+   * changes; ids the router did not register are ignored.
+   */
+  declareCacheEconomics: (
+    groupName: string,
+    modelId: string,
+    economics: DeclaredCacheEconomics
+  ) => void;
+}
+
+/** What one registration of a group provider needs, kept for re-registration. */
+interface GroupProviderSpec {
+  label: string;
+  contextWindow: number;
+  isDynamic: boolean;
 }
 
 export function createGroupRegistration(rt: GroupRegistrationDeps): GroupRegistration {
@@ -117,6 +141,71 @@ export function createGroupRegistration(rt: GroupRegistrationDeps): GroupRegistr
    * time, and a naive registry guard would skip re-registering all of them.
    */
   const registeredGroupProviderNames = new Set<string>();
+
+  /** The last registration spec per group (declareCacheEconomics re-uses it). */
+  const groupSpecs = new Map<string, GroupProviderSpec>();
+
+  /**
+   * Cache economics declared per group model (`<group>/<model id>`). Process-
+   * wide like the providers themselves: two sessions of one group in one
+   * process share the declaration (plan decision O3, accepted). Survives the
+   * session_start re-registration — the next served request corrects it.
+   */
+  const declaredEconomics = new Map<string, DeclaredCacheEconomics>();
+
+  function groupModelIds(groupName: string, spec: GroupProviderSpec): string[] {
+    return spec.isDynamic ? [groupName, `${groupName}:use-static`] : [groupName];
+  }
+
+  function registerGroupProvider(groupName: string, spec: GroupProviderSpec): void {
+    const { label, contextWindow } = spec;
+    const names = spec.isDynamic
+      ? [label, `${groupName} → auto-classify (static fallback allowed)`]
+      : [label];
+    rt.pi.registerProvider(groupName, {
+      baseUrl: 'https://router.local', // not used — streamSimple overrides
+      apiKey: 'router-virtual', // not used — streamSimple overrides
+      // A unique placeholder api name — never a real Api: streamSimple
+      // overrides every request, the value only has to be distinct per
+      // group so two groups cannot overwrite each other's provider.
+      api: `router-group-${groupName}` as Api,
+      streamSimple: rt.groupStream,
+      models: groupModelIds(groupName, spec).map((id, i) => {
+        // Zero price and no prompt-cache lifetime until a request was served:
+        // then the served model's (Pi's CacheWarmer reads both).
+        const economics = declaredEconomics.get(`${groupName}/${id}`) ?? UNDECLARED_CACHE_ECONOMICS;
+        return {
+          id,
+          name: names[i],
+          reasoning: true,
+          input: ['text', 'image'] as ('text' | 'image')[],
+          cost: economics.cost,
+          ...(economics.promptCache ? { promptCache: economics.promptCache } : {}),
+          contextWindow,
+          maxTokens: 64_000,
+        };
+      }),
+    });
+    groupSpecs.set(groupName, spec);
+    registeredGroupProviderNames.add(groupName);
+  }
+
+  function declareCacheEconomics(
+    groupName: string,
+    modelId: string,
+    economics: DeclaredCacheEconomics
+  ): void {
+    const spec = groupSpecs.get(groupName);
+    if (!spec || !groupModelIds(groupName, spec).includes(modelId)) return;
+    const key = `${groupName}/${modelId}`;
+    if (sameCacheEconomics(declaredEconomics.get(key) ?? UNDECLARED_CACHE_ECONOMICS, economics))
+      return;
+    declaredEconomics.set(key, economics);
+    routerLog(
+      `[cache-warm] ${key} declares ${economics.promptCache ? 'a prompt-cache lifetime' : 'no prompt-cache lifetime'} for Pi's cache warming`
+    );
+    registerGroupProvider(groupName, spec);
+  }
 
   /**
    * Register virtual providers for each model group (strategic, tactical, etc).
@@ -189,40 +278,7 @@ export function createGroupRegistration(rt: GroupRegistrationDeps): GroupRegistr
         ? `${groupName} → auto-classify`
         : `${groupName} → ${resolvedRef}`;
 
-      rt.pi.registerProvider(groupName, {
-        baseUrl: 'https://router.local', // not used — streamSimple overrides
-        apiKey: 'router-virtual', // not used — streamSimple overrides
-        // A unique placeholder api name — never a real Api: streamSimple
-        // overrides every request, the value only has to be distinct per
-        // group so two groups cannot overwrite each other's provider.
-        api: `router-group-${groupName}` as Api,
-        streamSimple: rt.groupStream,
-        models: [
-          {
-            id: groupName,
-            name: label,
-            reasoning: true,
-            input: ['text', 'image'] as ('text' | 'image')[],
-            cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-            contextWindow,
-            maxTokens: 64_000,
-          },
-          ...(isDynamicGroup
-            ? [
-                {
-                  id: `${groupName}:use-static`,
-                  name: `${groupName} → auto-classify (static fallback allowed)`,
-                  reasoning: true,
-                  input: ['text', 'image'] as ('text' | 'image')[],
-                  cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-                  contextWindow,
-                  maxTokens: 64_000,
-                },
-              ]
-            : []),
-        ] as NonNullable<ProviderConfig['models']>,
-      });
-      registeredGroupProviderNames.add(groupName);
+      registerGroupProvider(groupName, { label, contextWindow, isDynamic: isDynamicGroup });
     }
   }
 
@@ -435,5 +491,5 @@ export function createGroupRegistration(rt: GroupRegistrationDeps): GroupRegistr
     registerGroupProviders();
   }
 
-  return { registerGroupProviders, registerGroupModels };
+  return { registerGroupProviders, registerGroupModels, declareCacheEconomics };
 }

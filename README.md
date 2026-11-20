@@ -169,9 +169,22 @@ Long agentic sessions burn most of their cost resending context — and a **cold
 The thresholds are the 5b compaction gates; `fresh_session` is independent of them
 (see the bullet below) — a user can switch on the suggestion alone.
 
-Pi's own `cacheWarming` setting (pi 1.6.0) has no effect on router sessions: the group
-models declare no prompt-cache lifetime, so Pi never starts warming them. See
-[docs/research/2026-11-20-pi-cache-warming-1.6.md](docs/research/2026-11-20-pi-cache-warming-1.6.md).
+**Pi's `cacheWarming` setting is honored** (pi 1.6.0+). Pi decides when to warm — your
+mode (`off` / `streaming` / `idle`, Pi's default), its idle limit and its savings threshold;
+the router only makes a group model look like the model behind it: after a served request
+the group model declares that model's prompt-cache lifetime and price, and Pi's warm
+request (a one-token replay) goes verbatim to the model that served the session's last
+request — no routing, no fallback, nothing logged as a turn. No warm goes to a model that
+is rate-limited or behind an open breaker, or after a failed request. To stop router
+sessions from warming, set `"cacheWarming": "streaming"` or `"off"` in Pi's settings.
+Warm costs show in `/router cost` (`Cache warms (Pi)`, outside the session total) and in
+the footer's session totals; a recent warm counts as a step for the cold-cache signal
+below, so a cache Pi kept warm is not compacted and does not trigger the fresh-session
+suggestion. Limits: the declaration follows the previous request (Pi reads the session
+model's economics when a request starts), so a session's first request is never warmed
+and a turn that switches models warms with the previous model's lifetime and price; two
+in-process sessions of one group share the group model's declaration. See
+[docs/plans/2026-11-20-honor-pi-cache-warming.md](docs/plans/2026-11-20-honor-pi-cache-warming.md).
 
 Evaluated at every **turn boundary** (never between tool steps): context over `hard_tokens` compacts regardless of cache state; context over `soft_tokens` compacts only when the cache is cold — a miss on the last step (cacheRead below half the step's tokens; partial hits count as mostly-reprocessed), an idle gap over `cache_ttl_s`, or no step recorded yet (fresh/resumed session). A warm cache is never thrown away. Per-group overrides live on `model_groups.<g>.context_budget` and win per field over the global block.
 

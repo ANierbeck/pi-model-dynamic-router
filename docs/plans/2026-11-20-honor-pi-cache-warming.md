@@ -1,6 +1,9 @@
 # Honor Pi's `cacheWarming` setting in router sessions
 
-**Status:** proposed 2026-11-20 — awaiting owner approval.
+**Status:** in progress — approved by the owner 2026-11-20 (O1 yes, O3
+accepted; the follow-up adaptations in step 3 and the footer totals are part of
+the approval). Steps 1–4 implemented 2026-11-20 on `feat/honor-pi-cache-warming`;
+step 5 (live check) waits for a pi restart after the merge.
 
 **Verified against:** pi-coding-agent 1.6.0 (`dist/core/cache-warmer.js`,
 `dist/core/sdk.js` L192/L213–223/L262–271, `dist/core/agent-session.js`
@@ -65,22 +68,25 @@ about a virtual model.
 
 Each step red-first (AGENTS §4); one PR.
 
-## Open decisions
+## Decisions (owner, 2026-11-20)
 
-- **O1 — warm costs in `/router cost`.** Pi counts warms in its own session totals
-  (`cache_warm` usage entries). Should the router's usage log also record them, as
-  a separate kind so turn statistics stay clean? Recommendation: yes, separate
-  kind, shown as its own line.
-- **O2 — your own sessions.** Pi's default is `idle`, and your Pi settings set no
-  `cacheWarming`. Once this ships, your router sessions start warming (billed at
-  list price on PAYG; on subscriptions it consumes the token allowance). If you do
-  not want that, set `"cacheWarming": "streaming"` or `"off"` in Pi's global
-  settings — that is the point of honoring the setting.
-- **O3 — in-process sub-sessions.** Group providers are process-wide; two sessions
-  of one group resolved to different models in the same process overwrite each
-  other's declared economics (TTL/cost used by Pi's decision). The warm itself
-  still goes to each session's own turn model. Recommendation: accept and document;
-  revisit only if measured.
+- **O1 — warm costs in `/router cost`: yes.** Shown as their own line, read from
+  Pi's `cache_warm` session usage entries (Pi's record is the source; the router's
+  turn statistics stay clean). The router footer's session totals count Pi's
+  `usage` entries too, as Pi's built-in footer does.
+- **O2 — the owner's own sessions.** Pi's default is `idle`. Once this ships,
+  router sessions warm unless Pi's global `cacheWarming` says `streaming` or
+  `off` — that is the point of honoring the setting.
+- **O3 — in-process sub-sessions: accepted and documented.** Group providers are
+  process-wide; two sessions of one group resolved to different models in the
+  same process overwrite each other's declared economics (TTL/cost used by Pi's
+  decision). The warm itself still goes to each session's own turn model.
+  Revisit only if measured.
+- **Known lag (implementation finding).** Pi captures the session model when a
+  request starts, before the router resolves it, so a request's warm uses the
+  economics declared after the previous successful request. The first request
+  of a session therefore never warms; a turn that switches models warms with the
+  previous model's TTL/cost (the warm itself still targets the turn model).
 
 ## Not in scope
 

@@ -8,7 +8,7 @@ import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { createCommands } from '../src/commands.ts';
+import { registerRouterCommand } from './helpers/router-command.ts';
 
 const fakeHome = vi.hoisted(() => ({ dir: '' }));
 vi.mock('node:os', async (importOriginal) => {
@@ -22,25 +22,8 @@ function registerRouter(): {
   handler: Handler;
   complete: (prefix: string) => Array<{ value: string }> | null;
 } {
-  let handler: Handler | undefined;
-  let complete: ((prefix: string) => Array<{ value: string }> | null) | undefined;
-  const rt: any = {
-    pi: {
-      registerCommand: (name: string, def: any) => {
-        if (name === 'router') {
-          handler = def.handler;
-          complete = def.getArgumentCompletions;
-        }
-      },
-    },
-    load: () => {},
-    sessionCtx: undefined,
-    router: { setSessionCtx: () => {} },
-    cfg: { model_groups: {} },
-    cache: {},
-  };
-  createCommands(rt);
-  return { handler: handler!, complete: complete! };
+  const def = registerRouterCommand();
+  return { handler: def.handler, complete: def.getArgumentCompletions! };
 }
 
 async function run(handler: Handler, args: string): Promise<string[]> {

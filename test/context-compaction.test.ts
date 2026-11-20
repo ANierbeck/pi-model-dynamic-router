@@ -242,6 +242,111 @@ describe('resolveContextBudget', () => {
   });
 });
 
+// ── Pi cache warms keep the cache warm (honor-pi-cache-warming, step 3) ─────
+//
+// Pi 1.6 refreshes an idle session's prompt cache and records each successful
+// refresh as a `cache_warm` usage entry in the session — not in the router's
+// usage_log. Counted like a step, a warm resets the idle clock and carries its
+// own cache share; ignoring it would compact (5b) or suggest a fresh session
+// (5c) right after Pi paid to keep the cache alive.
+
+const warmEntry = (ts: number, cacheRead = 1000, input = 0): any => ({
+  type: 'usage',
+  kind: 'cache_warm',
+  id: `w${ts}`,
+  parentId: null,
+  timestamp: new Date(ts).toISOString(),
+  provider: 'a',
+  model: 'x',
+  usage: { input, output: 1, cacheRead, cacheWrite: 0, totalTokens: cacheRead + input + 1 },
+});
+
+describe('lastStepCacheState counts Pi cache warms', () => {
+  const step: UsageLogEntry[] = [
+    { ref: 'a/x', tokens: 1000, cacheRead: 990, ts: NOW - 20 * 60_000 },
+  ];
+
+  it('a warm after the last step is the latest cache state', () => {
+    const last = lastStepCacheState(step, [warmEntry(NOW - 60_000)]);
+    expect(last.ts).toBe(NOW - 60_000);
+    expect(last.cacheShare).toBe(1);
+  });
+
+  it('a warm before the last step does not override it', () => {
+    const last = lastStepCacheState(step, [warmEntry(NOW - 30 * 60_000, 0, 1000)]);
+    expect(last.ts).toBe(NOW - 20 * 60_000);
+    expect(last.cacheShare).toBeCloseTo(0.99);
+  });
+
+  it('other usage kinds are not warms', () => {
+    const other = { ...warmEntry(NOW - 60_000), kind: 'something_else' };
+    expect(lastStepCacheState(step, [other]).ts).toBe(NOW - 20 * 60_000);
+  });
+});
+
+describe('runContextCompaction reads Pi’s warms from the session', () => {
+  const cfg = (budget: Config['context_budget']) =>
+    ({ model_groups: {}, model_metrics: {}, context_budget: budget }) as any as Config;
+  // The last real step is warm but 20 minutes old — past a 5-minute TTL.
+  const staleStep = (): UsageLogEntry[] => [
+    { ref: 'a/x', tokens: 1000, cacheRead: 990, ts: Date.now() - 20 * 60_000 },
+  ];
+
+  it('5b: a recent warm keeps a TTL-expired step from compacting', () => {
+    const { ctx, compact } = fakeCtx(ctxFixture({ tokens: 500_000 }));
+    ctx.sessionManager = { getEntries: () => [warmEntry(Date.now() - 60_000)] };
+    runContextCompaction({
+      ctx,
+      cfg: cfg({ enabled: true, soft_tokens: SOFT, cache_ttl_s: 300 }),
+      activeGroup: null,
+      usageLog: staleStep(),
+      state: { lastHintAt: 0, compactionsRun: 0, turnSeqAtStart: 0 },
+    });
+    expect(compact).not.toHaveBeenCalled();
+  });
+
+  it('5b: without a warm the same step still compacts (the pin above is not vacuous)', () => {
+    const { ctx, compact } = fakeCtx(ctxFixture({ tokens: 500_000 }));
+    ctx.sessionManager = { getEntries: () => [] };
+    runContextCompaction({
+      ctx,
+      cfg: cfg({ enabled: true, soft_tokens: SOFT, cache_ttl_s: 300 }),
+      activeGroup: null,
+      usageLog: staleStep(),
+      state: { lastHintAt: 0, compactionsRun: 0, turnSeqAtStart: 0 },
+    });
+    expect(compact).toHaveBeenCalledTimes(1);
+  });
+
+  it('5c: a recent warm means the session did not idle out', () => {
+    const { ctx, notify } = fakeCtx(ctxFixture({ tokens: 700_000 }));
+    ctx.sessionManager = { getEntries: () => [warmEntry(Date.now() - 60_000)] };
+    runContextCompaction({
+      ctx,
+      cfg: cfg({ enabled: true, fresh_session: { enabled: true } }),
+      activeGroup: null,
+      usageLog: staleStep(),
+      state: { lastHintAt: 0, compactionsRun: 0, turnSeqAtStart: 0 },
+      stepsThisSession: 20,
+    });
+    expect(notify).not.toHaveBeenCalled();
+  });
+
+  it('5c: without a warm the idle gap suggests a fresh session', () => {
+    const { ctx, notify } = fakeCtx(ctxFixture({ tokens: 700_000 }));
+    ctx.sessionManager = { getEntries: () => [] };
+    runContextCompaction({
+      ctx,
+      cfg: cfg({ enabled: true, fresh_session: { enabled: true } }),
+      activeGroup: null,
+      usageLog: staleStep(),
+      state: { lastHintAt: 0, compactionsRun: 0, turnSeqAtStart: 0 },
+      stepsThisSession: 20,
+    });
+    expect(String(notify.mock.calls[0]?.[0])).toContain('fresh session suggested');
+  });
+});
+
 // ── runContextCompaction (acting on the decision) ───────────────────────────
 
 describe('runContextCompaction', () => {

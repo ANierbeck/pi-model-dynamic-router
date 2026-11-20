@@ -99,6 +99,25 @@ describe('allDiscoveredRefs() excludes virtual group self-references', () => {
     expect(refs).toContain('mistral/glm-5-2');
   });
 
+  // docs/plans/2026-11-20-honor-pi-cache-warming.md, step 1: a group model now
+  // declares the served model's price for Pi's cache warming. The exclusion
+  // must not depend on the zero price the group models used to carry.
+  it('a group model carrying a declared served-model price is still no candidate', () => {
+    const registry = makeRegistry([
+      { provider: 'trivial', id: 'trivial', cost: { input: 3, output: 15 } },
+      { provider: 'dynamic', id: 'dynamic', cost: { input: 3, output: 15 } },
+      { provider: 'mistral', id: 'glm-5-2', cost: { input: 0.3, output: 0.9 } },
+    ]);
+
+    const router = new Router(cfg, cache, new Map());
+    router.setSessionCtx({ modelRegistry: registry } as any);
+
+    const refs = router.allDiscoveredRefs();
+    expect(refs).not.toContain('trivial/trivial');
+    expect(refs).not.toContain('dynamic/dynamic');
+    expect(refs).toContain('mistral/glm-5-2');
+  });
+
   it('resolve("trivial") never selects trivial/trivial as its own candidate', () => {
     const registry = makeRegistry([
       { provider: 'trivial', id: 'trivial' },

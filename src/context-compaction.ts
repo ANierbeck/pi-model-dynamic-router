@@ -22,9 +22,11 @@
 // everywhere = feature off — measurement only, no hints. Setting thresholds
 // opts into the hints; `enabled: true` additionally automates them.
 //
-// 5c (fresh-session suggestion) is deferred to 2.0 by owner decision; 5d
-// (summarize via a cheaper model through the session_before_compact hook)
-// is later. SEAM: a custom summarizer model would hook in right where this
+// 5c (the fresh-session suggestion, src/fresh-session.ts) runs from the same
+// turn-boundary evaluation below. Pi's own cache warms (pi 1.6+, recorded as
+// `cache_warm` session usage entries) count as steps for the cold signal
+// (docs/plans/2026-11-20-honor-pi-cache-warming.md). 5d (summarize via a
+// cheaper model through the session_before_compact hook) is later. SEAM: a custom summarizer model would hook in right where this
 // module calls ctx.compact() — pass its group/instructions instead of the
 // plain compact() call below.
 
@@ -32,6 +34,7 @@ import type { Config, ContextBudgetConfig, UsageLogEntry } from './types.ts';
 import { fmt, textOf } from './utils.ts';
 import { routerLog, warnLog } from './logger.ts';
 import { decideFreshStart, freshStatusLine } from './fresh-session.ts';
+import { latestCacheWarm } from './cache-warming.ts';
 
 /**
  * Below this share of cached context the last step counts as a MISS (cold):
@@ -63,13 +66,19 @@ export interface LastStepCacheState {
  * full-price step (the cost the feature already accepts on a genuine cold
  * start) or a conservative miss; never a wrong exclusion. Opt-in only.
  */
-export function lastStepCacheState(usageLog: UsageLogEntry[] | undefined): LastStepCacheState {
+export function lastStepCacheState(
+  usageLog: UsageLogEntry[] | undefined,
+  sessionEntries?: readonly unknown[]
+): LastStepCacheState {
   const last = usageLog?.[usageLog.length - 1];
-  if (!last) return { cacheShare: null, ts: null };
-  return {
-    cacheShare: last.tokens > 0 ? (last.cacheRead ?? 0) / last.tokens : null,
-    ts: last.ts,
-  };
+  const step: LastStepCacheState = last
+    ? { cacheShare: last.tokens > 0 ? (last.cacheRead ?? 0) / last.tokens : null, ts: last.ts }
+    : { cacheShare: null, ts: null };
+  // Pi's cache warms (honor-pi-cache-warming, step 3) live in the SESSION,
+  // not in usage_log: a warm newer than the last step is the cache's latest
+  // state — it resets the idle clock and carries its own cache share.
+  const warm = latestCacheWarm(sessionEntries);
+  return warm && (step.ts === null || warm.ts > step.ts) ? warm : step;
 }
 
 /**
@@ -200,6 +209,8 @@ export function noteSessionCompaction(state: CompactionRunState): void {
  * share gate reads it when present (src/fresh-session.ts). */
 export interface CompactionCtx {
   getContextUsage(): { tokens: number | null; contextWindow?: number } | undefined;
+  /** Pi's session entries — the source of its `cache_warm` usage records. */
+  sessionManager?: { getEntries(): readonly unknown[] };
   compact(options?: { customInstructions?: string }): void;
   ui: { notify(message: string, type?: 'info' | 'warning' | 'error'): void };
 }
@@ -238,6 +249,9 @@ function runContextCompactionInner(opts: Parameters<typeof runContextCompaction>
   const usage = opts.ctx.getContextUsage?.();
   const tokens = usage?.tokens ?? null;
   if (tokens === null || !(tokens > 0)) return; // unknown right after a compaction
+  // One cache state for both 5b and 5c: the last usage_log step or Pi's
+  // latest cache warm, whichever is newer.
+  const last = lastStepCacheState(opts.usageLog, opts.ctx.sessionManager?.getEntries());
 
   // Nothing configured → measurement only (5a already records), no 5b hints.
   // The 5c fresh-session suggestion below does NOT need the thresholds — its
@@ -246,7 +260,7 @@ function runContextCompactionInner(opts: Parameters<typeof runContextCompaction>
   // review P1: it used to sit behind this early return, dead, while the
   // status line reported the switch as on).
   if ((budget.soft_tokens ?? 0) > 0 || (budget.hard_tokens ?? 0) > 0) {
-    const decision = decideCompaction(budget, tokens, lastStepCacheState(opts.usageLog), now);
+    const decision = decideCompaction(budget, tokens, last, now);
     if (decision.action === 'compact') {
       routerLog(
         `[compaction] context ${fmt(tokens)} tokens (${decision.reason === 'over-hard' ? 'over hard limit' : 'cold cache, over soft limit'}) — compacting at the turn boundary`
@@ -271,7 +285,6 @@ function runContextCompactionInner(opts: Parameters<typeof runContextCompaction>
   // Task-type balancing step 5c: a fresh session may beat continuing. Shares
   // the hint cooldown with the 5b hint (at most one nag per HINT_COOLDOWN_MS).
   if (budget.fresh_session?.enabled === true) {
-    const last = lastStepCacheState(opts.usageLog);
     const fresh = decideFreshStart({
       budget,
       freshEnabled: true,

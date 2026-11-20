@@ -1,6 +1,7 @@
 // src/cost-tracker.ts
 // Cost tracking for price-based routing
 
+import type { CacheWarmTotals } from './cache-warming.ts';
 import type { CostMetrics } from './types.ts';
 import { lookupPrice } from './metrics.ts';
 import { routerLog } from './logger.ts';
@@ -204,6 +205,8 @@ export class CostTracker {
     billingTier: (ref: string) => number;
     windowsAll: () => Record<string, { d1: number; d7: number; d30: number; cacheRead30?: number }>;
     price: (ref: string) => { input: number; output: number } | undefined;
+    /** Pi's recorded cache warms of the session (plan honor-pi-cache-warming, O1). */
+    cacheWarms?: CacheWarmTotals;
   }): string {
     const uptime = new Date().getTime() - this.startTime.getTime();
     const uptimeHours = (uptime / (1000 * 60 * 60)).toFixed(1);
@@ -255,6 +258,16 @@ export class CostTracker {
           `${ref.slice(0, 30).padEnd(30)} ${String(this.metrics.requestsByModel[ref]).padStart(3)} ${fmtK(t.in).padStart(6)}/${fmtK(t.out).padEnd(6)} ${fmtCost(cost).padStart(9)}  ${tierLabel(ref)}`
         );
       }
+    }
+
+    // Pi's cache warms (decision O1): Pi records them as `cache_warm` usage
+    // entries, not as routed requests, so they are listed on their own and
+    // kept out of the Total above — the router's turn statistics stay clean.
+    const warms = deps.cacheWarms;
+    if (warms && warms.count > 0) {
+      lines.push(
+        `Cache warms (Pi): ${warms.count}, $${warms.cost.toFixed(4)} (cache read ${fmtK(warms.cacheRead)}) — not in Total`
+      );
     }
 
     // Windows (persistent usage_log) + blended estimate. Keyed by the refs
