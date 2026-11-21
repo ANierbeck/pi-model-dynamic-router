@@ -194,10 +194,11 @@ hides the groups from `/model` and turns `set_model_from_group` into a pin
    branch; the decision log and `/router status` are compared against the
    last weeks on the group layer (served models, failovers, cost). No default
    flip: there is no switch.
-5. **Remove the workarounds (2.0.0, same release):** `src/session-restore.ts`
-   and its `setModel` call site (the static guard goes back to one call
-   site, then to the migration's), the duplicated `activeGroup`/`curModel`
-   pairs, the sub-call scope where `direct` covers it. The breaking changes
+5. **Remove the workarounds (2.0.0, same release):** the duplicated
+   `activeGroup`/`curModel` pairs, the sub-call scope where `direct` covers
+   it. (`src/session-restore.ts` and its `setModel` call site already went
+   in step 2; the one call site left is the migration's in
+   `src/event-handlers.ts`, pinned by `test/no-router-setmodel-static.test.ts`.) The breaking changes
    (group models gone from `/model`, `--model` and `enabledModels`;
    `set_model_from_group` pins instead of switching) go into the CHANGELOG
    and README.

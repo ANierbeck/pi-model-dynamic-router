@@ -81,12 +81,17 @@ export function registerSelectionModel(
       dispatchGroup,
     });
     let group = decision.group;
+    let state = decision.state;
     let model = groupModel(ctx, group);
     if (!model && group !== dispatchGroup) {
       // A group the router refused to register (named like a Pi provider,
-      // ADR-0019) has no model to route to.
-      warnLog(`[router] group "${group}" has no registered model; routing to "${dispatchGroup}"`);
+      // ADR-0019) has no model to route to. Its pin goes, or every request
+      // of the branch would fall back and warn again.
+      warnLog(
+        `[router] group "${group}" has no registered model; routing to "${dispatchGroup}" and releasing the pin`
+      );
       group = dispatchGroup;
+      state = { pin: null };
       model = groupModel(ctx, group);
     }
     if (!model) throw new Error(`[router] group "${dispatchGroup}" has no registered model`);
@@ -94,7 +99,7 @@ export function registerSelectionModel(
     return {
       model,
       thinkingLevel: request.thinkingLevel,
-      ...(decision.state ? { state: decision.state } : {}),
+      ...(state ? { state } : {}),
     };
   }
 

@@ -247,8 +247,17 @@ describe('session_start wiring', () => {
           // The first prompt on router/dynamic: Pi routes it through the
           // virtual model with the branch state (none yet on an old branch).
           const def = (pi.registerVirtualModel as ReturnType<typeof vi.fn>).mock.calls[0][0];
+          const stored = [...branch]
+            .reverse()
+            .find((e) => e?.type === 'custom' && e.customType === 'pi.virtual-model-state');
           out.routed = await def.route(
-            { reason: 'user', messages: [], thinkingLevel: 'off', model: liveModel },
+            {
+              reason: 'user',
+              messages: [],
+              thinkingLevel: 'off',
+              model: liveModel,
+              ...(stored ? { state: stored.data.state } : {}),
+            },
             ctx
           );
         }
@@ -328,7 +337,37 @@ describe('session_start wiring', () => {
   it('an old dynamic branch is classified, with no pin', async () => {
     const { routed } = await resume(routedBranch(), paidCloudModel());
     expect(routed?.model).toMatchObject({ provider: 'dynamic', id: 'dynamic' });
-    expect(routed?.state).toBeUndefined();
+    // The migration hands over "no pin" explicitly (re-review Minor 3).
+    expect(routed?.state).toEqual({ pin: null });
+  }, 30000);
+
+  // Re-review 2026-11-21 (Minor 3): an explicit start on the classifying
+  // group releases a pin the branch stored earlier.
+  it('a start on the classifying group releases the branch’s stored pin', async () => {
+    const branch = [
+      ...routedBranch(),
+      {
+        type: 'custom',
+        customType: 'pi.virtual-model-state',
+        data: { provider: 'router', modelId: 'dynamic', state: { pin: 'planning' } },
+      },
+    ];
+    const onGroup = { provider: 'dynamic', id: 'dynamic', api: 'router-group-dynamic' };
+    const { routed } = await resume(branch, onGroup);
+    expect(routed?.model).toMatchObject({ provider: 'dynamic', id: 'dynamic' });
+    expect(routed?.state).toEqual({ pin: null });
+  }, 30000);
+
+  // Re-review 2026-11-21 (Minor 6): a fresh start on a group model is no
+  // resume of a pre-migration session; the log says what happened.
+  it('the log line of a start on a group model names the group it left', async () => {
+    const onGroup = { provider: 'planning', id: 'planning', api: 'router-group-planning' };
+    await resume([], onGroup);
+    const lines = routerLog.mock.calls.map((c) => String(c[0]));
+    expect(lines).toContain(
+      '[router] session on group model planning/planning moved to router/dynamic (pinned planning)'
+    );
+    expect(lines.some((l) => l.includes('resumed session'))).toBe(false);
   }, 30000);
 
   // Review 2026-11-21 (Important 1): Pi starts on a hidden group model when

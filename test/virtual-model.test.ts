@@ -100,6 +100,9 @@ describe('registerSelectionModel', () => {
     expect(result.model).toEqual(groupModel('dynamic'));
     // The footer names the group that served, not the pinned one.
     expect(served.get('S')).toBe('dynamic');
+    // Re-review Minor 4: the dead pin goes, so the warning does not repeat
+    // on every request.
+    expect(result.state).toEqual({ pin: null });
   });
 
   // Review 2026-11-21 (Important 4): ctx.model stays router/dynamic, so the

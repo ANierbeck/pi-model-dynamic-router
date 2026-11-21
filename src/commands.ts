@@ -82,7 +82,7 @@ import type {
 import type { RateLimitManager } from './rate-limit.ts';
 import type { Router } from './routing.ts';
 import { runInSession, sessionIdOf } from './turn-state.ts';
-import { sessionGroupOf, type ServedGroups } from './virtual-selection.ts';
+import { sessionGroupOf, type PinHandoff, type ServedGroups } from './virtual-selection.ts';
 import { hasAnyInstall } from './laya-model-install.ts';
 import {
   defaultLayaInstallDeps,
@@ -112,6 +112,8 @@ interface CommandDeps {
   readonly curModel: string;
   /** The group route() last dispatched each session to (virtual selection). */
   readonly served: ServedGroups;
+  /** Pins waiting for the session's next route() (set_model_from_group). */
+  readonly pins: PinHandoff;
   readonly effCost: (ref: string) => number | 'unknown';
   readonly fmtModel: (ref: string, i: number, sel: boolean) => string;
   readonly formatBlocklist: () => string;
@@ -1744,12 +1746,11 @@ export function createCommands(rt: CommandDeps): void {
             ''
           );
 
-          const sessionGroup = sessionGroupOf(
-            ctx.model,
-            sessionIdOf(ctx),
-            rt.cfg.model_groups,
-            rt.served
-          );
+          const sessionGroup = sessionGroupOf(ctx.model, sessionIdOf(ctx), rt.cfg.model_groups, {
+            served: rt.served,
+            pins: rt.pins,
+            branch: ctx.sessionManager?.getBranch?.() ?? [],
+          });
           // Group tables with top 5 models (3 available + up to 2 limited)
           for (const [groupName, g] of Object.entries(rt.cfg.model_groups)) {
             const n = 5;

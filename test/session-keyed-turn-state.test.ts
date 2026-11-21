@@ -182,6 +182,7 @@ describe('turn state is keyed by session, not by process', () => {
       await tool.execute('t', { group: 'standard' }, undefined, undefined, {
         ...session('child'),
         model: virtual,
+        modelRegistry: h.modelRegistry,
       });
       await h.onHandlers['session_shutdown']?.({}, session('child'));
       const def = h.pi.registerVirtualModel.mock.calls[0][0];
@@ -328,6 +329,29 @@ describe('footer, category and sub-calls follow the session', () => {
       await serveTurn(h.defaultExport, 'parent');
       expect(footer()).toContain('standard/paid-cloud-provider/paid-model');
       expect(footer()).not.toContain('dynamic/');
+    });
+  }, 30000);
+
+  // Re-review 2026-11-21 (Minor 1): after /tree the last served group
+  // belongs to the branch left behind; the new branch's stored pin counts.
+  it('after /tree the footer names the new branch’s stored group', async () => {
+    await boot(async (h) => {
+      const virtual = { provider: 'router', id: 'dynamic', api: 'pi-virtual' };
+      const branch: unknown[] = [];
+      const footer = await footerOf(h, 'parent', new Map(), branch, virtual);
+      const def = h.pi.registerVirtualModel.mock.calls[0][0];
+      await def.route(
+        { reason: 'user', messages: [], thinkingLevel: 'off', model: virtual },
+        { modelRegistry: h.modelRegistry, ...session('parent') }
+      );
+      expect(footer()).toContain('dynamic/');
+      branch.push({
+        type: 'custom',
+        customType: 'pi.virtual-model-state',
+        data: { provider: 'router', modelId: 'dynamic', state: { pin: 'standard' } },
+      });
+      await h.onHandlers['session_tree']?.({}, session('parent'));
+      expect(footer()).toContain('standard/');
     });
   }, 30000);
 

@@ -7,7 +7,7 @@
 
 import { describe, it, expect } from 'vitest';
 import { createCommands } from '../src/commands.ts';
-import { createServedGroups } from '../src/virtual-selection.ts';
+import { createPinHandoff, createServedGroups } from '../src/virtual-selection.ts';
 
 const GROUPS = {
   dynamic: { method: 'dynamic' },
@@ -37,6 +37,7 @@ async function overviewHeaders(
     cfg: { model_groups: GROUPS },
     cache: {},
     served,
+    pins: createPinHandoff(),
     curModel: 'paid-cloud-provider/paid-model',
     resolve: () => null,
     rateLimitManager: { getLimits: () => new Map() },

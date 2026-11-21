@@ -161,11 +161,17 @@ async function restoreVirtualSelection(
   const branch = ctx.sessionManager?.getBranch?.() ?? [];
   const target = groupSelectionToMigrate(branch, ctx.model, groupNames);
   if (!target) return;
+  // Two paths (groupSelectionToMigrate): the session is ON a group model (a
+  // fresh start on the settings default or --model, or a resume that
+  // restored the group), or Pi fell back from a pre-migration group
+  // selection to the physical model that answered last.
+  const onGroup = ctx.model?.provider === target.provider && ctx.model?.id === target.modelId;
+  const prefix = onGroup
+    ? `[router] session on group model ${target.provider}/${target.modelId}:`
+    : '[router] resumed session:';
   const selection = ctx.modelRegistry.find(VIRTUAL_PROVIDER, VIRTUAL_MODEL_ID);
   if (!selection) {
-    warnLog(
-      '[router] resumed session: router/dynamic is not registered; keeping the restored model'
-    );
+    warnLog(`${prefix} router/dynamic is not registered; keeping the model`);
     return;
   }
   const groupModel = ctx.modelRegistry.find(target.provider, target.modelId);
@@ -180,22 +186,27 @@ async function restoreVirtualSelection(
   try {
     const ok = await rt.pi.setModel(selection);
     if (!ok) {
-      warnLog('[router] resumed session: could not select router/dynamic again');
+      warnLog(`${prefix} could not select router/dynamic again`);
       return;
     }
-    // A group other than the classifying group becomes the pin for the
-    // selection layer's next route(). Only after the switch: a pin for a
-    // failed one would wait in the handoff and fire on a later selection.
-    if (target.provider !== dispatchGroupOf(groups)) pins.set(sessionIdOf(ctx), target.provider);
+    // The selected group becomes the next route()'s pin; the classifying
+    // group means none, which also releases a pin the branch stored earlier
+    // (an explicit `--model dynamic/dynamic` on a pinned branch). Only after
+    // the switch: a pin for a failed one would wait in the handoff and fire
+    // on a later selection.
+    const pin = target.provider === dispatchGroupOf(groups) ? null : target.provider;
+    pins.set(sessionIdOf(ctx), pin);
     if (level && rt.pi.getThinkingLevel() !== level) {
       rt.pi.setThinkingLevel(level as Parameters<typeof rt.pi.setThinkingLevel>[0]);
     }
     routerLog(
-      `[router] resumed session: pre-migration selection ${target.provider}/${target.modelId}, routed via ${VIRTUAL_PROVIDER}/${VIRTUAL_MODEL_ID} (Pi restored ${restored})`
+      onGroup
+        ? `[router] session on group model ${target.provider}/${target.modelId} moved to ${VIRTUAL_PROVIDER}/${VIRTUAL_MODEL_ID} (${pin ? `pinned ${pin}` : 'no pin'})`
+        : `[router] resumed session: pre-migration selection ${target.provider}/${target.modelId}, routed via ${VIRTUAL_PROVIDER}/${VIRTUAL_MODEL_ID} (Pi restored ${restored})`
     );
   } catch (err: unknown) {
     warnLog(
-      `[router] resumed session: selecting router/dynamic failed: ${err instanceof Error ? err.message : textOf(err)}`
+      `${prefix} selecting router/dynamic failed: ${err instanceof Error ? err.message : textOf(err)}`
     );
   } finally {
     pendingRestore.ref = null;
@@ -327,12 +338,11 @@ export function createEventHandlers(rt: EventHandlerDeps): void {
           // route() last dispatched to) and the resolved model
           // (lastDynamicModel, updated by driveStream on every successful
           // stream) instead of the selection's id.
-          const groupBase = sessionGroupOf(
-            ctx.model,
-            sessionIdOf(ctx),
-            rt.cfg.model_groups ?? {},
-            rt.served
-          );
+          const groupBase = sessionGroupOf(ctx.model, sessionIdOf(ctx), rt.cfg.model_groups ?? {}, {
+            served: rt.served,
+            pins: rt.pins,
+            branch: ctx.sessionManager?.getBranch?.() ?? [],
+          });
           const isGroupModel = groupBase !== null;
           const grp = groupBase ?? (ref ? rt.detectGroup(ref) : null);
           const m = ref

@@ -109,7 +109,7 @@
   line and honoring Pi's `cacheWarming` incl. its review round (3643 passing / 3 skipped);
   the `--continue` group restore incl. its review round (3662 passing / 3 skipped);
   the virtual-models migration step 2 (selection layer, old-session migration,
-  pin-only `set_model_from_group`) incl. its review round (3719 passing / 3 skipped); do not
+  pin-only `set_model_from_group`) incl. its two review rounds (3728 passing / 3 skipped); do not
   lower the bar to a count).
   Don't lower the `coverage.thresholds` in `vitest.config.ts` to unblock a
   red run — fix the actual regression.

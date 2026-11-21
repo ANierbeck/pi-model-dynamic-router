@@ -706,12 +706,6 @@ const defaultExport = function (pi: ExtensionAPI): void {
     get pins() {
       return selectionPins;
     },
-    get activeGroup() {
-      return turn().activeGroup;
-    },
-    set activeGroup(v) {
-      turn().activeGroup = v;
-    },
     get cfg() {
       return cfg;
     },
@@ -733,14 +727,14 @@ const defaultExport = function (pi: ExtensionAPI): void {
     get resolve() {
       return resolve;
     },
-    get router() {
-      return router;
-    },
   });
 
   createCommands({
     get served() {
       return servedGroups;
+    },
+    get pins() {
+      return selectionPins;
     },
     get allDiscoveredRefs() {
       return allDiscoveredRefs;
@@ -1238,6 +1232,13 @@ const defaultExport = function (pi: ExtensionAPI): void {
   });
 
   const streamOrchestrator = new StreamOrchestrator(buildOrchestratorContext());
+
+  // A /tree jump moves the session to another branch: the group route()
+  // served last belongs to the branch left behind, so the footer falls back
+  // to the new branch's stored pin until the next request.
+  pi.on('session_tree', (_ev, ctx) => {
+    servedGroups.forget(sessionIdOf(ctx));
+  });
 
   pi.on('session_shutdown', (_ev, ctx) => {
     const id = sessionIdOf(ctx) ?? '';

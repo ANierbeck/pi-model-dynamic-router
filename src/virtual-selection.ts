@@ -85,6 +85,8 @@ export interface PinHandoff {
   set(sessionId: string | undefined, group: string | null): void;
   /** The pending pin of the session (and forget it), or undefined. */
   take(sessionId: string | undefined): string | null | undefined;
+  /** The pending pin of the session, left in place (display), or undefined. */
+  peek(sessionId: string | undefined): string | null | undefined;
   /** Drop the session's pending pin unapplied (session_shutdown). */
   forget(sessionId: string | undefined): void;
 }
@@ -100,6 +102,10 @@ export function createPinHandoff(): PinHandoff {
       const pin = pending.get(sessionId) ?? null;
       pending.delete(sessionId);
       return pin;
+    },
+    peek(sessionId: string | undefined): string | null | undefined {
+      if (sessionId === undefined || !pending.has(sessionId)) return undefined;
+      return pending.get(sessionId) ?? null;
     },
     forget(sessionId: string | undefined): void {
       if (sessionId !== undefined) pending.delete(sessionId);
@@ -132,22 +138,60 @@ export function createServedGroups(): ServedGroups {
   };
 }
 
+/** Pi's custom entry type for the state route() returns (pi.virtual-model-state). */
+const STATE_ENTRY = 'pi.virtual-model-state';
+
 /**
- * The group a session is on: on `router/dynamic` the group route() last
- * dispatched it to (before the first request, the classifying group it will
- * dispatch to); on a group model that group (its `:use-static` variant
- * included); on a concrete model none. The footer and the /router overview
- * both name it.
+ * The pin the branch stored last for `router/dynamic`: a group, null for
+ * none, undefined when the branch stores no state (Pi's
+ * getVirtualModelState, which extensions cannot import).
+ */
+export function branchPin(branch: readonly unknown[]): string | null | undefined {
+  for (let i = branch.length - 1; i >= 0; i--) {
+    const entry = branch[i] as
+      | { type?: unknown; customType?: unknown; data?: Record<string, unknown> }
+      | undefined;
+    if (entry?.type !== 'custom' || entry.customType !== STATE_ENTRY) continue;
+    const data = entry.data;
+    if (data?.provider !== VIRTUAL_PROVIDER || data.modelId !== VIRTUAL_MODEL_ID) continue;
+    const pin = (data.state as { pin?: unknown } | undefined)?.pin;
+    return typeof pin === 'string' ? pin : null;
+  }
+  return undefined;
+}
+
+/** Where sessionGroupOf looks for the group of a session on `router/dynamic`. */
+export interface SessionGroupSources {
+  readonly served: Pick<ServedGroups, 'get'>;
+  readonly pins: Pick<PinHandoff, 'peek'>;
+  /** The session's current branch (ctx.sessionManager.getBranch()). */
+  readonly branch: readonly unknown[];
+}
+
+/**
+ * The group a session is on. On `router/dynamic`: the group route() last
+ * dispatched it to on this branch; before the first request (a resume, a
+ * migration, a /tree jump), the pin the next route() will apply — the
+ * pending one, else the branch's stored one — and without either the
+ * classifying group. On a group model (provider === group, `:use-static`
+ * included): that group. On a concrete model: none. The footer and the
+ * /router overview both name it.
  */
 export function sessionGroupOf(
   model: { provider?: string; id?: string } | undefined,
   sessionId: string | undefined,
   groups: Readonly<Record<string, GroupLike>>,
-  served: Pick<ServedGroups, 'get'>
+  sources: SessionGroupSources
 ): string | null {
-  const group =
-    model?.provider === VIRTUAL_PROVIDER && model?.id === VIRTUAL_MODEL_ID
-      ? (served.get(sessionId) ?? dispatchGroupOf(groups))
-      : model?.id?.replace(/:use-static$/, '');
-  return group && Object.prototype.hasOwnProperty.call(groups, group) ? group : null;
+  const known = (g: string | null | undefined): g is string =>
+    typeof g === 'string' && Object.prototype.hasOwnProperty.call(groups, g);
+  if (model?.provider === VIRTUAL_PROVIDER && model?.id === VIRTUAL_MODEL_ID) {
+    const served = sources.served.get(sessionId);
+    if (known(served)) return served;
+    const pending = sources.pins.peek(sessionId);
+    const pin = pending !== undefined ? pending : branchPin(sources.branch);
+    return known(pin) ? pin : dispatchGroupOf(groups);
+  }
+  const group = model?.id?.replace(/:use-static$/, '');
+  return known(group) && model?.provider === group ? group : null;
 }

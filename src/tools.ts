@@ -25,7 +25,6 @@ import type { ExtensionContext, ExtensionAPI } from '@earendil-works/pi-coding-a
 import { Type } from 'typebox';
 import * as fs from 'node:fs';
 import type { Config, Metrics } from './types.ts';
-import type { Router } from './routing.ts';
 
 /**
  * Dependencies createTools reads from index.ts's extension closure. Exposed as
@@ -34,7 +33,6 @@ import type { Router } from './routing.ts';
  * managers on reload, and a captured copy would go stale.
  */
 interface ToolDeps {
-  activeGroup: string | null;
   readonly cfg: Config;
   readonly cfgPath: string;
   readonly fmtModel: (ref: string, i: number, sel: boolean) => string;
@@ -44,7 +42,6 @@ interface ToolDeps {
   readonly pins: PinHandoff;
   readonly pi: ExtensionAPI;
   readonly resolve: (name: string) => { selected: string; candidates: string[] } | null;
-  readonly router: Router;
 }
 
 /**
@@ -139,9 +136,16 @@ export function createTools(rt: ToolDeps): void {
           pinned: null,
         });
       }
+      // route() can only serve a group with a registered model; a group the
+      // router refused to register (named like a Pi provider, ADR-0019)
+      // would fall back on every request.
+      const registered = (g: string): boolean => !!ctx.modelRegistry?.find?.(g, g);
+      const available = (): string => Object.keys(groups).filter(registered).join(', ');
       if (!Object.prototype.hasOwnProperty.call(groups, name))
+        throw new Error(`Unknown group "${params.group}". Available: ${available()}`);
+      if (!registered(name))
         throw new Error(
-          `Unknown group "${params.group}". Available: ${Object.keys(groups).join(', ')}`
+          `Group "${name}" has no registered model, so the router cannot serve it. Available: ${available()}`
         );
       rt.pins.set(sessionIdOf(ctx), name);
       // The expected model is the group's top candidate; the served model

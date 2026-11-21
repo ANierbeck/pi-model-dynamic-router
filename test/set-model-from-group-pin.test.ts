@@ -21,6 +21,8 @@ function setup() {
     model_groups: {
       dynamic: { method: 'dynamic' },
       planning: { models: ['paid-cloud-provider/paid-model'] },
+      // Configured, but refused at registration (named like a Pi provider, ADR-0019).
+      refused: { models: ['paid-cloud-provider/paid-model'] },
     },
   };
   createTools({
@@ -48,6 +50,10 @@ function setup() {
     tool.execute('t', { group }, undefined, undefined, {
       model,
       sessionManager: { getSessionId: () => SID },
+      modelRegistry: {
+        find: (provider: string, id: string) =>
+          provider === id && (id === 'dynamic' || id === 'planning') ? { provider, id } : undefined,
+      },
     });
   return { pins, call };
 }
@@ -72,6 +78,13 @@ describe('set_model_from_group pins the group', () => {
     const { pins, call } = setup();
     await call('dynamic');
     expect(pins.take(SID)).toBeNull();
+  });
+
+  // Re-review Minor 4: route() would fall back from it on every request.
+  it('a configured group without a registered model throws and pins nothing', async () => {
+    const { pins, call } = setup();
+    await expect(call('refused')).rejects.toThrow(/no registered model/);
+    expect(pins.take(SID)).toBeUndefined();
   });
 
   it('an unknown group throws and pins nothing', async () => {
