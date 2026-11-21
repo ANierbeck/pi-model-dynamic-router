@@ -105,6 +105,23 @@ describe('registerSelectionModel', () => {
     expect(result.state).toEqual({ pin: null });
   });
 
+  // Step 5 review (Boyscout, AGENTS §7): branchState reads only the LAST
+  // state entry, so a release written as a bare `{ pin: null }` replaced the
+  // branch's run group and inherited category with nothing — a restart after
+  // the fallback lost the category memory step 3 persists.
+  it('the fallback release keeps the other stored fields of the branch', async () => {
+    const { route } = setup(['dynamic', 'simple']);
+    const result = await route({
+      state: { pin: 'planning', group: 'simple', runGroup: 'simple', lastCategory: 'design' },
+    });
+    expect(result.state).toEqual({
+      pin: null,
+      group: 'simple',
+      runGroup: 'simple',
+      lastCategory: 'design',
+    });
+  });
+
   // Review 2026-11-21 (Important 4): ctx.model stays router/dynamic, so the
   // footer reads the group route() dispatched the session to.
   it('records the group each session was dispatched to', async () => {

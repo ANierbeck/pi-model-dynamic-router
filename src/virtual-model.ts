@@ -17,6 +17,7 @@ import {
   VIRTUAL_MODEL_ID,
   decideSelection,
   dispatchGroupOf,
+  foldSelectionState,
   type PinHandoff,
   type SelectionState,
   type ServedGroups,
@@ -91,7 +92,9 @@ export function registerSelectionModel(
         `[router] group "${group}" has no registered model; routing to "${dispatchGroup}" and releasing the pin`
       );
       group = dispatchGroup;
-      state = { pin: null };
+      // A state write replaces the branch's last entry: fold, or the release
+      // would drop the stored run group and inherited category.
+      state = foldSelectionState(request.state, { pin: null });
       model = groupModel(ctx, group);
     }
     if (!model) throw new Error(`[router] group "${dispatchGroup}" has no registered model`);
