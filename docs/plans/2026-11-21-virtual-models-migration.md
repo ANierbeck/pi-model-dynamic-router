@@ -16,7 +16,17 @@ model); `dist/core/agent-session-services.js` L98–110 (virtual models queued
 at extension load are registered before the session is created);
 `index.ts` L1029 (`registerGroupProviders()` runs at extension load);
 `src/turn-state.ts` (`TurnState`, `RouterTurnState`, `SessionStore`, 64
-sessions); 41 test files that mention `groupStream`. The retry matrix on Pi
+sessions); 41 test files that mention `groupStream`. Hiding the group models
+(added 2026-11-21): pi-ai 1.6.0 `dist/models.js` L121–123 (`getModel` reads
+`getModels()` unfiltered) and L318–328 (`getAvailable` applies the provider's
+`filterModels`), `dist/models.d.ts` L113–118 (`filterModels` is the documented
+availability policy; `getModels()` stays the complete catalog);
+pi-coding-agent `dist/core/model-registry.js` L21–25 (`ctx.modelRegistry`:
+`getAvailable` = availability snapshot, `find` = `getModel`),
+`dist/core/model-runtime.js` L192 (the snapshot `/model` lists comes from
+`getAvailable`) and L366 (`hasConfiguredAuth` reads configured providers, not
+models), `dist/core/extensions/loader.js` L373–381 (`pi.registerProvider`
+also accepts a native pi-ai `Provider` object). The retry matrix on Pi
 1.6.0 (2026-11-21, `spikes/virtual-models/README.md`). **Not checked:**
 everything listed under step 1.
 
@@ -80,6 +90,21 @@ What moves where:
 | Failover, waits, breaker, narration | `driveStream` | unchanged (`driveStream` in the group provider) |
 | Cache warming | group model declares economics | unchanged: the warmer starts with the routed model, which is the group model |
 | Compaction threshold | group model's `contextWindow` | unchanged: Pi checks the routed model's limits |
+| Group models in `/model`, `--model`, scoped models | selectable (they are the selection) | hidden: the group provider's `filterModels` returns nothing |
+
+**Hiding the dispatch layer.** Once the virtual models are the selection, the
+group models (`planning`, `code_complex`, …, and their `:use-static`
+variants) no longer need to be selectable. Pi separates the catalog from
+availability: `/model`, `--model` and scoped models list
+`getAvailable()`, which applies the provider's `filterModels` policy, while
+`getModel()` — what `route()`'s target check, `ctx.modelRegistry.find` and
+the resume restore use — reads the unfiltered catalog. A group provider
+registered as a native pi-ai `Provider` (`pi.registerProvider(provider)`,
+not the name-plus-config form used today) with `filterModels: () => []` is
+therefore invisible to the user and still routable. Old sessions whose last
+`model_change` names a group model still resume onto it (unfiltered lookup).
+With the switch of step 2 off, the filter stays off and today's behavior is
+unchanged.
 
 ### Steps
 
@@ -100,6 +125,13 @@ users before step 4.
      footer — what does `ctx.model` show, where does the routed model come
      from).
    - `HINT:` pins and `set_model_from_group` against a virtual selection.
+   - Hidden group provider: a native `Provider` with `filterModels: () => []`
+     stays out of `/model`, `--model` and scoped models (also in the first
+     snapshot at startup, model-runtime L185, which does not apply the
+     filter), still counts as configured (`hasConfiguredAuth`), still streams
+     as `route()`'s target, and the router's own `getAvailable()` readers
+     (`src/routing.ts`, `src/scan-runner.ts`, `src/dynamic-config-runner.ts`,
+     `src/commands.ts`) keep working without the group refs.
    - Re-run `scripts/virtual-route-shadow.ts` on current logs (the 93-turn
      figure is from 2026-10-28 → 2026-11-06).
    Exit: a written go/no-go per item; any no-go stops the plan before step 2.
@@ -137,11 +169,12 @@ users before step 4.
    virtual models as experimental (CHANGELOG 0.99.0) and no later entry says
    otherwise (the 1.6.0 docs and type comments no longer use the word), and
    the release has a critical path of its own already.
-3. **Naming.** Virtual models under a provider id of their own (e.g.
-   `router/<group>`), while the group providers stay registered and visible
-   in `/model` as the dispatch layer. Pi cannot hide them; picking one
-   directly gives today's behavior. Alternative: rename the group providers
-   to mark them as internal.
+3. **Naming and what stays visible.** Virtual models under a provider id of
+   their own (e.g. `router/<group>`); the group providers are hidden (see
+   "Hiding the dispatch layer"; the earlier claim of this plan that Pi cannot
+   hide them was wrong). Open: a virtual model per group, or only
+   `router/dynamic` (the category groups then reachable only through
+   classification, `HINT:` and `set_model_from_group`).
 4. **The switch and its default** in step 2 (user config key, or a
    `/router` command), and the criteria for the default flip in step 4.
 5. **Widen the re-evaluation trigger** of the 2026-11-04 plan beyond retry
