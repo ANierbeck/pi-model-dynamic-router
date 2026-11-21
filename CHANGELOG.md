@@ -11,6 +11,12 @@ without the owner's explicit release approval).
 
 ### Added
 
+- **`/router fresh` waits for the running turn** (plan
+  `docs/plans/2026-11-21-busy-session-fresh.md`): instead of aborting the turn
+  it was typed into, the command waits up to three times and then interrupts
+  once; a skeleton handoff is announced as such; the fresh-session hint fires
+  once per reason per session and says the command runs after the current turn.
+
 - **Pi's `cacheWarming` setting is honored in router sessions** (plan
   `docs/plans/2026-11-20-honor-pi-cache-warming.md`, owner decision 2026-11-20:
   the router must not behave differently from a Pi setting the user chose).

@@ -1,7 +1,8 @@
 # `/router fresh` in a busy session
 
-**Status:** in progress — 2026-11-21. Owner decision on open decision 1: wait for the
-running turn in up to three waits, then interrupt it.
+**Status:** done — 2026-11-21. Owner decision on open decision 1: wait for
+the running turn in up to three waits, then interrupt it. All three steps
+implemented and tested red-first.
 
 **Verified against:** `origin/main` @ `03274c1`; Pi pi-coding-agent 1.6.0
 (`dist/core/agent-session.js`). The router lines were read on
@@ -35,16 +36,18 @@ it repeats.
 
 ## Solution
 
-1. **Never abort the turn.** The command confirms, then waits for the current
-   turn to end (`waitForIdle()`, available on the command context,
-   `agent-session.js:1734`), then runs the handoff. The notice says it is
-   queued behind the turn.
-2. **Say when the summary is missing.** When the 30 s wait ends with a
-   skeleton, the notice and the new session's handoff message say so.
-   The 30 s fail-open stays.
-3. **Hint once per reason.** The fresh hint fires once per session per reason
-   (`cold`, `idle`, `stuck`). It fires again only when the reason changes. The
-   hint says the command runs after the current turn.
+1. **Never abort the turn.** Implemented 2026-11-21 (owner decision: wait
+   up to three times, then interrupt once): the command confirms, then waits
+   for the current turn to end (`waitForIdle()`, `agent-session.js:1734`); after
+   three waits without the turn ending it calls `abort()` once and proceeds.
+   The notice says it is queued behind the turn.
+2. **Say when the summary is missing.** Implemented: the new session's
+   notice says the handoff is a skeleton when the 30 s wait ended without a
+   summary (the handoff message already did). The 30 s fail-open stays.
+3. **Hint once per reason.** Implemented: `lastFreshReason` on the compaction
+   state; the hint fires once per reason per session and again when the reason
+   changes. The hint text now ends with "/router fresh (runs after the current
+   turn)".
 4. **No change to `/router status`.** It already shows the switch state.
 
 ## Steps (red first, AGENTS §4)
@@ -63,9 +66,8 @@ it repeats.
 
 ## Open decisions
 
-1. **During a turn: wait or refuse?** Recommended: wait (the user's intent is
-   kept, no work is lost). Refusing is the alternative: a message, no queue.
+1. **During a turn: wait or refuse?** Decided 2026-11-21: wait up to three
+   times, then interrupt once.
 2. **Summary wait length.** Recommended: keep 30 s fail-open and report the
    skeleton. A longer wait only after the compaction times are measured.
-3. **Hint frequency.** Recommended: once per reason per session. The
-   alternative is the current cooldown-only rule.
+3. **Hint frequency.** Decided 2026-11-21: once per reason per session.
