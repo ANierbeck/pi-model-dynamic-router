@@ -84,6 +84,25 @@ export function legacyGroupToRestore(
   return null;
 }
 
+/**
+ * The group selection session_start moves to `router/dynamic`, or null.
+ * Either the session model IS a router group model — Pi resolves the
+ * settings default and `--model` through the unfiltered catalog, so a user
+ * whose default is `dynamic/dynamic` still starts on the hidden group, where
+ * no route() runs and no pin applies (review 2026-11-21, Important 1) — or
+ * Pi fell back from a pre-migration group selection to the physical model
+ * that answered last (legacyGroupToRestore).
+ */
+export function groupSelectionToMigrate(
+  branch: readonly unknown[],
+  current: ModelRefLike | undefined,
+  groupNames: ReadonlySet<string>
+): GroupSelection | null {
+  if (current && isGroupModelRef(`${current.provider}/${current.id}`, groupNames))
+    return { provider: current.provider, modelId: current.id };
+  return legacyGroupToRestore(branch, current, groupNames);
+}
+
 /** The thinking level the branch records last (Pi's resume restores it), or undefined. */
 export function branchThinkingLevel(branch: readonly unknown[]): string | undefined {
   for (let i = branch.length - 1; i >= 0; i--) {

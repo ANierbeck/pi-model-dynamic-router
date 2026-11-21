@@ -126,6 +126,15 @@ describe('createPinHandoff', () => {
     h.set(undefined, 'planning');
     expect(h.take(undefined)).toBeUndefined();
   });
+
+  it('forgets a session’s pending pin unapplied (session_shutdown)', () => {
+    const h = createPinHandoff();
+    h.set('s1', 'planning');
+    h.set('s2', 'simple');
+    h.forget('s1');
+    expect(h.take('s1')).toBeUndefined();
+    expect(h.take('s2')).toBe('simple');
+  });
 });
 
 describe('the virtual model ref', () => {

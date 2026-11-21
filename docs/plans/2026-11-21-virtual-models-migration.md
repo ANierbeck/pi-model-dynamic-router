@@ -5,6 +5,7 @@ every item, two conditions (`docs/research/2026-11-21-router-shape-spike.md`).
 The owner then decided to migrate for 2.0.0 with the virtual layer as the only
 path (open decisions 1, 2 and 4 below). Steps 2, 3 and 5 are built before
 2.0.0; step 4 (the owner's live phase) is the gate for proposing the release.
+Step 2 built on `feat/virtual-selection` (2026-11-21), not yet merged.
 
 **Verified against:** `main` @ `36ddef3`; pi-coding-agent 1.6.0:
 `docs/virtual-models.md`; `dist/core/virtual-models.js` L29–42
@@ -96,7 +97,7 @@ What moves where:
 | Compaction summary, extension sub-calls on the virtual model | sub-call scope (`AsyncLocalStorage`) | `reason: "direct"`, no state by construction |
 | Failover, waits, breaker, narration | `driveStream` | unchanged (`driveStream` in the group provider) |
 | Cache warming | group model declares economics | unchanged: the warmer starts with the routed model, which is the group model |
-| Compaction threshold | group model's `contextWindow` | unchanged: Pi checks the routed model's limits |
+| Compaction threshold | group model's `contextWindow` | to verify in step 4: Pi's `docs/virtual-models.md` says context usage under a virtual selection uses the limits of the physical model that answered last, and compaction also checks the routed model (review 2026-11-21) |
 | Group models in `/model`, `--model`, scoped models | selectable (they are the selection) | hidden: the group provider's `filterModels` returns nothing |
 
 **Hiding the dispatch layer.** Once the virtual models are the selection, the
@@ -115,8 +116,10 @@ unchanged.
 
 ### Steps
 
-Each step is its own PR with red-first tests (AGENTS §4). Nothing changes for
-users before step 4.
+Each step is its own PR with red-first tests (AGENTS §4). Users of the
+published package see nothing before 2.0.0; on the branch, step 2 already
+hides the groups from `/model` and turns `set_model_from_group` into a pin
+(the CHANGELOG and README entries are step 5's).
 
 1. **Close the open facts (spike, no ship code).** Extend
    `spikes/virtual-models/` and write results to `docs/research/`:
@@ -161,19 +164,28 @@ users before step 4.
      the provider is registered once and again only when the group set
      changes.
    - `set_model_from_group` (`src/tools.ts`) becomes a pin in the branch state
-     instead of `pi.setModel`; `none` releases it. The spike's pattern: the
+     instead of `pi.setModel`; `none` and the classifying group release it.
+     It throws on a session that is not on `router/dynamic`, where no
+     `route()` would apply the pin. The spike's pattern: the
      tool records the pin per session, the next `route()` call (the tool
      follow-up, `continuation`) applies and stores it.
    - **Spike condition (F7): old sessions.** At `session_start`, a branch whose
      selection names a router group moves to `router/dynamic`; a group other
      than `dynamic` becomes the pin. This replaces `src/session-restore.ts`.
+     A session that *starts* on a group model moves too: Pi resolves the
+     settings default and `--model` through the unfiltered catalog, so a
+     default of `dynamic/dynamic` still lands on the hidden group (review
+     2026-11-21). Headless children (no UI) keep their model. A `:use-static`
+     selection migrates to its group, which `route()` serves through the
+     group's own method — see open decision 6.
    - `route()` maps a `failed` physical model back to the group through the
      state's run group, never through `failed.model.provider` (spike D3).
    - The router's own `getAvailable()` readers (`src/routing.ts`,
      `src/scan-runner.ts`, `src/dynamic-config-runner.ts`,
      `src/commands.ts`) are checked against hidden groups.
-   - The footer and `/router status` show the served group and model, not
-     `ctx.model` (which stays `router/dynamic`).
+   - The footer and the `/router` overview show the served group and model,
+     not `ctx.model` (which stays `router/dynamic`): `route()` records the
+     group it dispatched each session to.
 3. **Turn state into `route()` state (2.0.0).** Move the pin, run group and
    inherited category into the branch state; the in-memory `TurnState` keeps
    only what is per request (stream time, turn sequence). Then a fork and a
@@ -207,3 +219,8 @@ users before step 4.
    AGENTS §10 (it was skipped in the 1.6.0 round). Still open; with the
    migration done the trigger turns into "re-run the router-shape spike on
    every host upgrade", which is the recommendation.
+6. **The `:use-static` variants.** `route()` only returns `find(group, group)`,
+   so the `<group>:use-static` models stay registered (hidden) but are no
+   longer reachable; a legacy `:use-static` selection migrates to its group
+   (review 2026-11-21, Minor 2). Options: drop the variants in step 5, or
+   carry "static" in the branch state in step 3. Open.

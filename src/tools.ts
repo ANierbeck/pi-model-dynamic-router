@@ -13,7 +13,12 @@ import { executeBulkRead } from './bulk-read.ts';
 import { routerLog } from './logger.ts';
 import { runAsSubCall } from './subcall-scope.ts';
 import { runInSession, sessionIdOf } from './turn-state.ts';
-import type { PinHandoff } from './virtual-selection.ts';
+import {
+  VIRTUAL_PROVIDER,
+  VIRTUAL_MODEL_ID,
+  dispatchGroupOf,
+  type PinHandoff,
+} from './virtual-selection.ts';
 import * as metricsModule from './metrics.ts';
 import { splitRef, textOf } from './utils.ts';
 import type { ExtensionContext, ExtensionAPI } from '@earendil-works/pi-coding-agent';
@@ -49,6 +54,21 @@ interface ToolDeps {
  * nothing to await only hides it.
  */
 const syncResult = <T>(value: T): Promise<T> => Promise.resolve(value);
+
+/** What set_model_from_group reports: the pin it set (null: released). */
+interface PinDetails {
+  readonly group: string;
+  readonly pinned: string | null;
+  readonly selected?: string;
+  readonly provider?: string;
+  readonly modelId?: string;
+}
+
+const pinResult = (
+  text: string,
+  details: PinDetails
+): Promise<{ content: { type: 'text'; text: string }[]; details: PinDetails }> =>
+  syncResult({ content: [{ type: 'text', text }], details });
 
 export function createTools(rt: ToolDeps): void {
   // ── Tools ──────────────────────────────────────────────────────────────
@@ -93,9 +113,9 @@ export function createTools(rt: ToolDeps): void {
     name: 'set_model_from_group',
     label: 'Set Model from Group',
     description:
-      'Resolve a model group and pin it for this session branch: the router serves this group from the next request on. "none" is not a group — resolve_model_group does the lookup only.',
-    parameters: Type.Object({ group: Type.String({ description: 'Model group name' }) }),
-    async execute(
+      'Pin a model group for this session branch: the router serves that group from the next request on. "none" (or the classifying group) releases the pin. Works only while the session model is router/dynamic.',
+    parameters: Type.Object({ group: Type.String({ description: 'Model group name, or "none"' }) }),
+    execute(
       _id: string,
       params: { group: string },
       _signal: AbortSignal | undefined,
@@ -103,28 +123,38 @@ export function createTools(rt: ToolDeps): void {
       ctx: ExtensionContext
     ) {
       rt.load();
-      const name = params.group.toLowerCase(),
-        res = rt.resolve(name);
-      if (!res)
+      // The pin reaches only route() of router/dynamic; on any other model
+      // it would sit in the handoff and fire after a later switch.
+      if (ctx.model?.provider !== VIRTUAL_PROVIDER || ctx.model.id !== VIRTUAL_MODEL_ID)
         throw new Error(
-          `No models for group "${params.group}". Available: ${Object.keys(rt.cfg.model_groups).join(', ')}`
+          `set_model_from_group pins a group of ${VIRTUAL_PROVIDER}/${VIRTUAL_MODEL_ID}; the session model is ${ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : '(none)'}. Select ${VIRTUAL_PROVIDER}/${VIRTUAL_MODEL_ID} first.`
         );
-      const m = rt.getM(res.selected);
-      await Promise.resolve();
+      const groups = rt.cfg.model_groups ?? {};
+      const name = params.group.toLowerCase();
+      // "none" and the classifying group both mean: classify again.
+      if (name === 'none' || name === dispatchGroupOf(groups)) {
+        rt.pins.set(sessionIdOf(ctx), null);
+        return pinResult('pin released: the router classifies each request', {
+          group: name,
+          pinned: null,
+        });
+      }
+      if (!Object.prototype.hasOwnProperty.call(groups, name))
+        throw new Error(
+          `Unknown group "${params.group}". Available: ${Object.keys(groups).join(', ')}`
+        );
       rt.pins.set(sessionIdOf(ctx), name);
-      // The status triple names the model the NEXT request is expected to
-      // serve (the group's top candidate); the served model appears on the
-      // assistant message.
+      // The expected model is the group's top candidate; the served model
+      // appears on the assistant message. A dynamic group resolves per
+      // request, so it has none to name.
+      const res = rt.resolve(name);
+      if (!res) return pinResult(`pinned ${name}`, { group: name, pinned: name });
+      const m = rt.getM(res.selected);
       const { provider, modelId } = splitRef(res.selected);
-      return {
-        content: [
-          {
-            type: 'text',
-            text: `${res.selected} (${name}, gdp:${m.gdpval}, tps:${Math.round(m.throughput_tps)})`,
-          },
-        ],
-        details: { group: name, selected: res.selected, provider, modelId },
-      };
+      return pinResult(
+        `pinned ${name}: ${res.selected} (gdp:${m.gdpval}, tps:${Math.round(m.throughput_tps)})`,
+        { group: name, pinned: name, selected: res.selected, provider, modelId }
+      );
     },
   });
 

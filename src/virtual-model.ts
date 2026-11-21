@@ -19,8 +19,10 @@ import {
   dispatchGroupOf,
   type PinHandoff,
   type SelectionState,
+  type ServedGroups,
 } from './virtual-selection.ts';
 import { warnLog } from './logger.ts';
+import { sessionIdOf } from './turn-state.ts';
 
 /**
  * Every thinking level Pi knows (pi-ai `MODEL_THINKING_LEVELS`, not exported
@@ -35,10 +37,12 @@ export interface SelectionModelDeps {
   groups(): Readonly<Record<string, { method?: string }>>;
   /** Pins `set_model_from_group` set during a turn. */
   pins: PinHandoff;
+  /** Where route() records the group it dispatched each session to. */
+  served: ServedGroups;
   /**
    * The window Pi shows before the first response (the dispatch group's).
-   * Read lazily: before the first load() the config is still unset, and a
-   * group's spec exists only after registerGroupProviders().
+   * Pi reads it once, at registration — register after
+   * registerGroupProviders(), when the group's spec exists.
    */
   readonly contextWindow?: number | undefined;
 }
@@ -56,6 +60,44 @@ export function registerSelectionModel(
   pi: Pick<ExtensionAPI, 'registerVirtualModel'>,
   deps: SelectionModelDeps
 ): void {
+  // Synchronous decision; route() wraps it so a throw rejects the promise.
+  function routeNow(
+    request: ModelRouteRequest<SelectionState>,
+    ctx: ExtensionContext
+  ): ModelRoute<SelectionState> {
+    const groups = deps.groups();
+    const dispatchGroup = dispatchGroupOf(groups);
+    if (dispatchGroup === null) throw new Error('[router] no model group is configured');
+    // The same session key the tool and the restore pin under.
+    const sessionId = sessionIdOf(ctx);
+    // Pi ignores the state a direct request returns, so a pin taken there
+    // would be lost: it waits for the next agent-loop request.
+    const pending = request.reason === 'direct' ? undefined : deps.pins.take(sessionId);
+    const decision = decideSelection({
+      reason: request.reason,
+      state: request.state,
+      pending,
+      groupNames: new Set(Object.keys(groups)),
+      dispatchGroup,
+    });
+    let group = decision.group;
+    let model = groupModel(ctx, group);
+    if (!model && group !== dispatchGroup) {
+      // A group the router refused to register (named like a Pi provider,
+      // ADR-0019) has no model to route to.
+      warnLog(`[router] group "${group}" has no registered model; routing to "${dispatchGroup}"`);
+      group = dispatchGroup;
+      model = groupModel(ctx, group);
+    }
+    if (!model) throw new Error(`[router] group "${dispatchGroup}" has no registered model`);
+    deps.served.record(sessionId, group);
+    return {
+      model,
+      thinkingLevel: request.thinkingLevel,
+      ...(decision.state ? { state: decision.state } : {}),
+    };
+  }
+
   pi.registerVirtualModel<SelectionState>({
     provider: VIRTUAL_PROVIDER,
     id: VIRTUAL_MODEL_ID,
@@ -63,39 +105,9 @@ export function registerSelectionModel(
     thinkingLevels: THINKING_LEVELS,
     ...(deps.contextWindow ? { contextWindow: deps.contextWindow } : {}),
     maxTokens: 64_000,
-    route: async (
+    route: (
       request: ModelRouteRequest<SelectionState>,
       ctx: ExtensionContext
-    ): Promise<ModelRoute<SelectionState>> => {
-      const groups = deps.groups();
-      const dispatchGroup = dispatchGroupOf(groups);
-      if (dispatchGroup === null) throw new Error('[router] no model group is configured');
-      const sessionId = await Promise.resolve(ctx.sessionManager?.getSessionId?.());
-      // Pi ignores the state a direct request returns, so a pin taken there
-      // would be lost: it waits for the next agent-loop request.
-      const pending = request.reason === 'direct' ? undefined : deps.pins.take(sessionId);
-      const decision = decideSelection({
-        reason: request.reason,
-        state: request.state,
-        pending,
-        groupNames: new Set(Object.keys(groups)),
-        dispatchGroup,
-      });
-      let model = groupModel(ctx, decision.group);
-      if (!model && decision.group !== dispatchGroup) {
-        // A group the router refused to register (named like a Pi provider,
-        // ADR-0019) has no model to route to.
-        warnLog(
-          `[router] group "${decision.group}" has no registered model; routing to "${dispatchGroup}"`
-        );
-        model = groupModel(ctx, dispatchGroup);
-      }
-      if (!model) throw new Error(`[router] group "${dispatchGroup}" has no registered model`);
-      return {
-        model,
-        thinkingLevel: request.thinkingLevel,
-        ...(decision.state ? { state: decision.state } : {}),
-      };
-    },
+    ): Promise<ModelRoute<SelectionState>> => Promise.resolve().then(() => routeNow(request, ctx)),
   });
 }

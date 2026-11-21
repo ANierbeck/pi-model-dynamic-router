@@ -7,7 +7,7 @@
  */
 import { describe, it, expect, vi } from 'vitest';
 import { registerSelectionModel } from '../src/virtual-model.ts';
-import { createPinHandoff } from '../src/virtual-selection.ts';
+import { createPinHandoff, createServedGroups } from '../src/virtual-selection.ts';
 
 const GROUPS = {
   dynamic: { method: 'dynamic' },
@@ -22,9 +22,11 @@ function groupModel(group: string) {
 function setup(registered: string[] = Object.keys(GROUPS)) {
   const registerVirtualModel = vi.fn();
   const pins = createPinHandoff();
+  const served = createServedGroups();
   registerSelectionModel({ registerVirtualModel } as any, {
     groups: () => GROUPS,
     pins,
+    served,
     contextWindow: 200_000,
   });
   const definition = registerVirtualModel.mock.calls[0]![0];
@@ -40,7 +42,7 @@ function setup(registered: string[] = Object.keys(GROUPS)) {
       { thinkingLevel: 'high', reason: 'user', messages: [], model: {}, ...request },
       ctx
     );
-  return { registerVirtualModel, definition, pins, route };
+  return { registerVirtualModel, definition, pins, served, route };
 }
 
 describe('registerSelectionModel', () => {
@@ -93,9 +95,22 @@ describe('registerSelectionModel', () => {
   });
 
   it('a pinned group without a registered model falls back to the classifying group', async () => {
-    const { route } = setup(['dynamic', 'simple']);
+    const { route, served } = setup(['dynamic', 'simple']);
     const result = await route({ state: { pin: 'planning' } });
     expect(result.model).toEqual(groupModel('dynamic'));
+    // The footer names the group that served, not the pinned one.
+    expect(served.get('S')).toBe('dynamic');
+  });
+
+  // Review 2026-11-21 (Important 4): ctx.model stays router/dynamic, so the
+  // footer reads the group route() dispatched the session to.
+  it('records the group each session was dispatched to', async () => {
+    const { route, served } = setup();
+    expect(served.get('S')).toBeUndefined();
+    await route({ reason: 'continuation', state: { pin: 'planning' } });
+    expect(served.get('S')).toBe('planning');
+    served.forget('S');
+    expect(served.get('S')).toBeUndefined();
   });
 
   it('fails with a router message when no group model is registered', async () => {

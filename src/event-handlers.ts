@@ -15,8 +15,15 @@ import { costTracker } from './cost-tracker.ts';
 import { handleReadDelegation } from './delegation.ts';
 import { runAsSubCall } from './subcall-scope.ts';
 import { setProjectLogDir, debugLog, routerLog, warnLog } from './logger.ts';
-import { branchThinkingLevel, legacyGroupToRestore } from './legacy-session-restore.ts';
-import { VIRTUAL_PROVIDER, VIRTUAL_MODEL_ID, type PinHandoff } from './virtual-selection.ts';
+import { branchThinkingLevel, groupSelectionToMigrate } from './legacy-session-restore.ts';
+import {
+  VIRTUAL_PROVIDER,
+  VIRTUAL_MODEL_ID,
+  dispatchGroupOf,
+  sessionGroupOf,
+  type PinHandoff,
+  type ServedGroups,
+} from './virtual-selection.ts';
 import * as metricsModule from './metrics.ts';
 import { setPiRegisteredProviders, setModelRegistry } from './metrics.ts';
 import { countSessionErrorsSince } from './session-errors.ts';
@@ -66,6 +73,8 @@ interface EventHandlerDeps {
   readonly pi: ExtensionAPI;
   /** Pins `set_model_from_group` set during a turn (the selection layer's). */
   readonly pins: PinHandoff;
+  /** The group route() last dispatched each session to (the footer's group on router/dynamic). */
+  readonly served: ServedGroups;
   readonly rateLimitManager: RateLimitManager;
   readonly recordOk: (ref: string) => void;
   readonly registerGroupModels: (ctx: ExtensionContext) => void;
@@ -126,14 +135,15 @@ function inSessionOf<E, R>(
 }
 
 /**
- * Old sessions (before the virtual-models migration, plan
- * docs/plans/2026-11-21-virtual-models-migration.md step 2): the selection
- * was a group model, so Pi restored the physical model that answered last
- * (src/legacy-session-restore.ts). Restore the virtual selection: re-select
- * `router/dynamic` — Pi rewrites the branch's last selection — and pin the
- * group the old branch had selected for the selection layer's next route().
- * Runs after the group models are registered, so the registry knows the
- * group model.
+ * Move a session onto the virtual selection (plan
+ * docs/plans/2026-11-21-virtual-models-migration.md step 2, spike condition
+ * F7): an old session, whose selection was a group model, so Pi restored the
+ * physical model that answered last, or a session that starts on a hidden
+ * group model (settings default, `--model`) — src/legacy-session-restore.ts.
+ * Select `router/dynamic` — Pi rewrites the branch's last selection — and
+ * pin a group other than the classifying one for the next route(). Runs
+ * after the group models are registered, so the registry knows the group
+ * model.
  */
 async function restoreVirtualSelection(
   rt: EventHandlerDeps,
@@ -146,9 +156,10 @@ async function restoreVirtualSelection(
   // given exactly the model that answered the parent last would look like
   // Pi's fallback, and its explicit model must win.
   if (ctx.hasUI !== true) return;
-  const groupNames = new Set(Object.keys(rt.cfg.model_groups ?? {}));
+  const groups = rt.cfg.model_groups ?? {};
+  const groupNames = new Set(Object.keys(groups));
   const branch = ctx.sessionManager?.getBranch?.() ?? [];
-  const target = legacyGroupToRestore(branch, ctx.model, groupNames);
+  const target = groupSelectionToMigrate(branch, ctx.model, groupNames);
   if (!target) return;
   const selection = ctx.modelRegistry.find(VIRTUAL_PROVIDER, VIRTUAL_MODEL_ID);
   if (!selection) {
@@ -167,14 +178,15 @@ async function restoreVirtualSelection(
   // The switch emits model_select (source "set"): not a user pick.
   pendingRestore.ref = `${VIRTUAL_PROVIDER}/${VIRTUAL_MODEL_ID}`;
   try {
-    // A group other than the classifying group becomes the pin for the
-    // selection layer's next route().
-    if (target.provider !== 'dynamic') pins.set(sessionIdOf(ctx), target.provider);
     const ok = await rt.pi.setModel(selection);
     if (!ok) {
       warnLog('[router] resumed session: could not select router/dynamic again');
       return;
     }
+    // A group other than the classifying group becomes the pin for the
+    // selection layer's next route(). Only after the switch: a pin for a
+    // failed one would wait in the handoff and fire on a later selection.
+    if (target.provider !== dispatchGroupOf(groups)) pins.set(sessionIdOf(ctx), target.provider);
     if (level && rt.pi.getThinkingLevel() !== level) {
       rt.pi.setThinkingLevel(level as Parameters<typeof rt.pi.setThinkingLevel>[0]);
     }
@@ -309,16 +321,20 @@ export function createEventHandlers(rt: EventHandlerDeps): void {
 
         function renderFooter(w: number): string[] {
           const ref = ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : '';
-          // The router never swaps the session's active model (see driveStream) —
-          // ctx.model stays the virtual group model (e.g. "standard/standard") for
-          // the whole session. Detect that here so the footer can show the actually
-          // resolved model (lastDynamicModel, updated by driveStream on every
-          // successful stream) instead of the static virtual model id.
-          const groupBase = ctx.model?.id?.replace(/:use-static$/, '');
-          const isGroupModel = groupBase
-            ? Object.prototype.hasOwnProperty.call(rt.cfg.model_groups, groupBase)
-            : false;
-          const grp = isGroupModel ? groupBase! : ref ? rt.detectGroup(ref) : null;
+          // ctx.model is the selection — `router/dynamic`, or a group model on
+          // a session that never migrated — not the model that served. Show
+          // the session's group (sessionGroupOf: on `router/dynamic` the group
+          // route() last dispatched to) and the resolved model
+          // (lastDynamicModel, updated by driveStream on every successful
+          // stream) instead of the selection's id.
+          const groupBase = sessionGroupOf(
+            ctx.model,
+            sessionIdOf(ctx),
+            rt.cfg.model_groups ?? {},
+            rt.served
+          );
+          const isGroupModel = groupBase !== null;
+          const grp = groupBase ?? (ref ? rt.detectGroup(ref) : null);
           const m = ref
             ? rt.getM(isGroupModel && rt.lastDynamicModel ? rt.lastDynamicModel : ref)
             : null;

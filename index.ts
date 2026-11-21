@@ -83,7 +83,7 @@ import { createFreeModelRegistration } from './src/free-model-registration.ts';
 import { createStreamProxy } from './src/stream-proxy.ts';
 import { createGroupRegistration } from './src/group-registration.ts';
 import { registerSelectionModel } from './src/virtual-model.ts';
-import { createPinHandoff, dispatchGroupOf } from './src/virtual-selection.ts';
+import { createPinHandoff, createServedGroups, dispatchGroupOf } from './src/virtual-selection.ts';
 import { createEventHandlers } from './src/event-handlers.ts';
 import { createTools } from './src/tools.ts';
 import { createCommands } from './src/commands.ts';
@@ -569,6 +569,9 @@ const defaultExport = function (pi: ExtensionAPI): void {
     get pins() {
       return selectionPins;
     },
+    get served() {
+      return servedGroups;
+    },
     get activeGroup() {
       return turn().activeGroup;
     },
@@ -693,19 +696,11 @@ const defaultExport = function (pi: ExtensionAPI): void {
 
   // The session's selection (docs/plans/2026-11-21-virtual-models-migration.md,
   // step 2): `router/dynamic` routes each request to a hidden group model.
-  // The pin handoff exists before every consumer (tools and route()), so a
-  // pin set in a turn reaches the next route(). The window is read lazily:
-  // before the first load() the config is still unset, and the dispatch
-  // group's spec exists only after registerGroupProviders().
+  // The pin handoff exists before every consumer (the tools here, route()
+  // registered after registerGroupProviders() below), so a pin set in a
+  // turn reaches the next route().
   const selectionPins = createPinHandoff();
-  registerSelectionModel(pi, {
-    groups: (): Config['model_groups'] => cfg.model_groups ?? {},
-    pins: selectionPins,
-    get contextWindow() {
-      const group = dispatchGroupOf(cfg?.model_groups ?? {});
-      return group ? groupContextWindow(group) : undefined;
-    },
-  });
+  const servedGroups = createServedGroups();
 
   createTools({
     get pins() {
@@ -744,6 +739,9 @@ const defaultExport = function (pi: ExtensionAPI): void {
   });
 
   createCommands({
+    get served() {
+      return servedGroups;
+    },
     get allDiscoveredRefs() {
       return allDiscoveredRefs;
     },
@@ -1051,6 +1049,19 @@ const defaultExport = function (pi: ExtensionAPI): void {
   metricsModule.loadModelMap(extDir);
   loadCache();
   registerGroupProviders();
+  // Pi reads a virtual model's contextWindow once, at registration: only
+  // now are the config loaded and the dispatch group's spec registered.
+  // load() above assigned cfg; read through a closure like every other reader.
+  const selectionGroups = (): Config['model_groups'] => cfg.model_groups ?? {};
+  const dispatchGroup = dispatchGroupOf(selectionGroups());
+  const selectionWindow = dispatchGroup ? groupContextWindow(dispatchGroup) : undefined;
+  registerSelectionModel(pi, {
+    groups: selectionGroups,
+    pins: selectionPins,
+    served: servedGroups,
+    ...(selectionWindow ? { contextWindow: selectionWindow } : {}),
+  });
+
   // Build the streaming orchestrator context once all helpers are defined.
   // Fields that change mid-session (cfg, cache) are passed as mutable object
   // references so the orchestrator always reads the current value.
@@ -1237,6 +1248,10 @@ const defaultExport = function (pi: ExtensionAPI): void {
     router.setSessionCtx(remaining);
     turnStates.reset(id);
     routerTurnStates.reset(id);
+    // The selection layer's per-session records go with it: a pin the
+    // session never routed again must not wait for a reused id.
+    selectionPins.forget(id);
+    servedGroups.forget(id);
     // lastClassifiedCategory is conversation state — it must not leak into the
     // next session's first 'continue' classification (PR #70 review); it goes
     // with the session's entry.

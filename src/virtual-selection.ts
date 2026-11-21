@@ -85,6 +85,8 @@ export interface PinHandoff {
   set(sessionId: string | undefined, group: string | null): void;
   /** The pending pin of the session (and forget it), or undefined. */
   take(sessionId: string | undefined): string | null | undefined;
+  /** Drop the session's pending pin unapplied (session_shutdown). */
+  forget(sessionId: string | undefined): void;
 }
 
 export function createPinHandoff(): PinHandoff {
@@ -99,5 +101,53 @@ export function createPinHandoff(): PinHandoff {
       pending.delete(sessionId);
       return pin;
     },
+    forget(sessionId: string | undefined): void {
+      if (sessionId !== undefined) pending.delete(sessionId);
+    },
   };
+}
+
+/**
+ * The group route() last dispatched each session to. ctx.model stays
+ * `router/dynamic`, so this is what the footer names as the session's group.
+ */
+export interface ServedGroups {
+  record(sessionId: string | undefined, group: string): void;
+  get(sessionId: string | undefined): string | undefined;
+  forget(sessionId: string | undefined): void;
+}
+
+export function createServedGroups(): ServedGroups {
+  const served = new Map<string, string>();
+  return {
+    record(sessionId: string | undefined, group: string): void {
+      if (sessionId !== undefined) served.set(sessionId, group);
+    },
+    get(sessionId: string | undefined): string | undefined {
+      return sessionId === undefined ? undefined : served.get(sessionId);
+    },
+    forget(sessionId: string | undefined): void {
+      if (sessionId !== undefined) served.delete(sessionId);
+    },
+  };
+}
+
+/**
+ * The group a session is on: on `router/dynamic` the group route() last
+ * dispatched it to (before the first request, the classifying group it will
+ * dispatch to); on a group model that group (its `:use-static` variant
+ * included); on a concrete model none. The footer and the /router overview
+ * both name it.
+ */
+export function sessionGroupOf(
+  model: { provider?: string; id?: string } | undefined,
+  sessionId: string | undefined,
+  groups: Readonly<Record<string, GroupLike>>,
+  served: Pick<ServedGroups, 'get'>
+): string | null {
+  const group =
+    model?.provider === VIRTUAL_PROVIDER && model?.id === VIRTUAL_MODEL_ID
+      ? (served.get(sessionId) ?? dispatchGroupOf(groups))
+      : model?.id?.replace(/:use-static$/, '');
+  return group && Object.prototype.hasOwnProperty.call(groups, group) ? group : null;
 }
