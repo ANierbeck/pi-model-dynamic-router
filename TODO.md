@@ -611,7 +611,8 @@ Pick up in a later round, each as its own plan where noted (§11):
   metadata (1.5.0), and whether Pi's cache warmer handles a virtual model
   (unchecked). Needs its own plan (§11) with the shadow route
   (`scripts/virtual-route-shadow.ts`) re-run on current logs; open decision
-  for the owner: widen the trigger beyond retry behavior.
+  for the owner: widen the trigger beyond retry behavior. Plan written:
+  `docs/plans/2026-11-21-virtual-models-migration.md` (proposed).
 - **Felt quality vs. benchmark ranking** (2026-10-31 observation): needs its
   own plan — how owner ratings per model and task type enter the ranking
   (user layer, allowed per ADR-0025 §2C) without model names in shipped code.
