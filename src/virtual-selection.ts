@@ -173,8 +173,8 @@ export interface SessionGroupSources {
  * dispatched it to on this branch; before the first request (a resume, a
  * migration, a /tree jump), the pin the next route() will apply — the
  * pending one, else the branch's stored one — and without either the
- * classifying group. On a group model (provider === group, `:use-static`
- * included): that group. On a concrete model: none. The footer and the
+ * classifying group. On a group model (provider === group): that group.
+ * On a concrete model: none. The footer and the
  * /router overview both name it.
  */
 export function sessionGroupOf(
@@ -192,6 +192,6 @@ export function sessionGroupOf(
     const pin = pending !== undefined ? pending : branchPin(sources.branch);
     return known(pin) ? pin : dispatchGroupOf(groups);
   }
-  const group = model?.id?.replace(/:use-static$/, '');
+  const group = model?.id;
   return known(group) && model?.provider === group ? group : null;
 }

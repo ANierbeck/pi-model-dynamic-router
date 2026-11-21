@@ -157,16 +157,15 @@ export function createGroupRegistration(rt: GroupRegistrationDeps): GroupRegistr
    */
   const declaredEconomics = new Map<string, DeclaredCacheEconomics>();
 
-  function groupModelIds(groupName: string, spec: GroupProviderSpec): string[] {
-    return spec.isDynamic ? [groupName, `${groupName}:use-static`] : [groupName];
+  /** One catalog entry per group: its own id. */
+  function groupModelIds(groupName: string): string[] {
+    return [groupName];
   }
 
   /** The group's models as Pi's catalog lists them, built from the current spec. */
   function groupModels(groupName: string, spec: GroupProviderSpec): Model<Api>[] {
-    const names = spec.isDynamic
-      ? [spec.label, `${groupName} → auto-classify (static fallback allowed)`]
-      : [spec.label];
-    return groupModelIds(groupName, spec).map((id, i) => {
+    const names = [spec.label];
+    return groupModelIds(groupName).map((id, i) => {
       // Zero price and no prompt-cache lifetime until a request was served:
       // then the served model's (Pi's CacheWarmer reads both).
       const economics = declaredEconomics.get(`${groupName}/${id}`) ?? UNDECLARED_CACHE_ECONOMICS;
@@ -237,7 +236,7 @@ export function createGroupRegistration(rt: GroupRegistrationDeps): GroupRegistr
     economics: DeclaredCacheEconomics
   ): void {
     const spec = groupSpecs.get(groupName);
-    if (!spec || !groupModelIds(groupName, spec).includes(modelId)) return;
+    if (!spec || !groupModelIds(groupName).includes(modelId)) return;
     const key = `${groupName}/${modelId}`;
     if (sameCacheEconomics(declaredEconomics.get(key) ?? UNDECLARED_CACHE_ECONOMICS, economics))
       return;

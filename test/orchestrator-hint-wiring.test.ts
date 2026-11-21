@@ -721,9 +721,9 @@ describe('classifier call wiring', () => {
     expect(args[1].context.lastModelLimited).toBe(false);
   });
 
-  it('allowStaticFallback follows the :use-static suffix, allowCloudChain only an explicit true', async () => {
+  it('no keyword fallback option; allowCloudChain only an explicit true', async () => {
     const plain = await opts({});
-    expect(plain.args[1].allowStaticFallback).toBe(false);
+    expect(plain.args[1]).not.toHaveProperty('allowStaticFallback');
     expect(plain.args[1].allowCloudChain).toBe(false);
 
     const cloud = await opts({
@@ -903,21 +903,17 @@ describe('tool follow-up step', () => {
 // ── plain (non-dynamic) groups and :use-static ───────────────────────────
 
 describe('group name parsing', () => {
-  it('a :use-static suffix names the group and switches the static fallback on', async () => {
-    const w = world({
-      classification: { category: 'standard' },
-      resolvable: { standard: { candidates: ['mistral/glm'], selected: 'mistral/glm' } },
-    });
+  it('a dynamic:use-static id is no group (the variant is gone)', () => {
+    const w = world({ classification: {}, resolvable: {} });
     w.ctx.cfg.model_groups.dynamic = { method: 'dynamic' };
     const orch = new StreamOrchestrator(w.ctx);
-    const drive = vi.spyOn(orch, 'driveStream').mockResolvedValue(undefined as never);
-    orch.groupStream(
-      { provider: 'router', id: 'dynamic:use-static', api: 'x' } as any,
-      { messages: [{ role: 'user', content: 'hi', timestamp: 1 }] } as any,
-      undefined
-    );
-    await vi.waitFor(() => expect(drive).toHaveBeenCalled());
-    expect(w.classifyPrompt.mock.calls[0][1].allowStaticFallback).toBe(true);
+    expect(() =>
+      orch.groupStream(
+        { provider: 'router', id: 'dynamic:use-static', api: 'x' } as any,
+        { messages: [] } as any,
+        undefined
+      )
+    ).toThrow('No available models for group "dynamic:use-static"');
   });
 
   it('a static group is driven directly with its candidates and its own name', async () => {

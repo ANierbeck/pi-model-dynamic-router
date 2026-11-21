@@ -13,8 +13,7 @@ import { dirname, join } from 'node:path';
 
 describe('classifier-mapping-hints', () => {
   // Tests for CATEGORY_TO_GROUP / getGroupForCategory (category → router group).
-  // detectHintDirectly lives in hint-classification / detect-hint-synonyms,
-  // classifyStatically in classifier.test.ts.
+  // detectHintDirectly lives in hint-classification / detect-hint-synonyms.
 
   describe('CATEGORY_TO_GROUP / getGroupForCategory', () => {
     // NOTE: the CATEGORY_TO_GROUP table pin that lived here was byte-identical to the one in test/five-group-layout.test.ts (hygiene Phase 4 Step 4, 2026-11-03); kept there only.

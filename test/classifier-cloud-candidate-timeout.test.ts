@@ -70,20 +70,21 @@ describe('classifyPrompt cloud fallback: per-candidate timeout', () => {
     const completeSimple = vi.fn().mockImplementation(() => new Promise(() => {}));
     const findModel = vi.fn().mockReturnValue(mockModel);
 
-    // allowStaticFallback keeps the promise from never resolving at all —
-    // the chain must degrade, not hang. Static classification answers.
-    const result = await classifyPrompt('All hanging cloud candidates must degrade to static', {
-      allowCloudChain: true,
-      allowStaticFallback: true,
-      cfg: {} as any,
-      cache: {
-        classifier_cloud_models: ['prov/hang-a', 'prov/hang-b'],
-        classifier_cloud_probe_sig: PROBE_SIGNATURE,
-      } as any,
-      completeSimple,
-      findModel,
-      cloudTimeoutMs: 50,
-    });
+    // The chain must degrade, not hang: the continue fallback answers.
+    const result = await classifyPrompt(
+      'All hanging cloud candidates must degrade to the fallback',
+      {
+        allowCloudChain: true,
+        cfg: {} as any,
+        cache: {
+          classifier_cloud_models: ['prov/hang-a', 'prov/hang-b'],
+          classifier_cloud_probe_sig: PROBE_SIGNATURE,
+        } as any,
+        completeSimple,
+        findModel,
+        cloudTimeoutMs: 50,
+      }
+    );
 
     expect(completeSimple).toHaveBeenCalledTimes(2);
     // Static fallback: a routed fallback category, never a hang/throw.

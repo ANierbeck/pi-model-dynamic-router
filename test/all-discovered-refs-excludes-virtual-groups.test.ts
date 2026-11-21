@@ -78,13 +78,12 @@ describe('allDiscoveredRefs() excludes virtual group self-references', () => {
     metricsModule.setModelMap({}, []);
   });
 
-  it('drops <group>/<group> and <group>/<group>:use-static refs, keeps real models', () => {
+  it('drops <group>/<group> refs, keeps real models', () => {
     // The registry contains BOTH the virtual group models (as
     // registerGroupProviders() would register them) AND a real model.
     const registry = makeRegistry([
       { provider: 'trivial', id: 'trivial' }, // virtual self-ref
       { provider: 'dynamic', id: 'dynamic' }, // virtual self-ref
-      { provider: 'dynamic', id: 'dynamic:use-static' }, // virtual self-ref
       { provider: 'mistral', id: 'glm-5-2', cost: { input: 0.3, output: 0.9 } }, // real model
     ]);
 
@@ -95,7 +94,6 @@ describe('allDiscoveredRefs() excludes virtual group self-references', () => {
 
     expect(refs).not.toContain('trivial/trivial');
     expect(refs).not.toContain('dynamic/dynamic');
-    expect(refs).not.toContain('dynamic/dynamic:use-static');
     expect(refs).toContain('mistral/glm-5-2');
   });
 
@@ -168,10 +166,10 @@ describe('allDiscoveredRefs() excludes virtual group self-references', () => {
 describe('isVirtualGroupRef() predicate', () => {
   const groupNames = new Set(['trivial', 'dynamic']);
 
-  it('flags <group>/<group> and <group>/<group>:use-static', () => {
+  it('flags <group>/<group>; a :use-static id is no virtual ref', () => {
     expect(isVirtualGroupRef('trivial/trivial', groupNames)).toBe(true);
     expect(isVirtualGroupRef('dynamic/dynamic', groupNames)).toBe(true);
-    expect(isVirtualGroupRef('dynamic/dynamic:use-static', groupNames)).toBe(true);
+    expect(isVirtualGroupRef('dynamic/dynamic:use-static', groupNames)).toBe(false);
   });
 
   it('does not flag real models, even those under a group-named provider', () => {

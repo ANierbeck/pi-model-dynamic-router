@@ -57,7 +57,8 @@ describe('group providers are hidden native providers', () => {
     const { reg, providerOf } = setup();
     reg.registerGroupProviders();
     const dynamic = providerOf('dynamic');
-    expect(dynamic.getModels().map((m: any) => m.id)).toEqual(['dynamic', 'dynamic:use-static']);
+    // The `<group>:use-static` variant is gone: one catalog entry per group.
+    expect(dynamic.getModels().map((m: any) => m.id)).toEqual(['dynamic']);
     expect(dynamic.filterModels(dynamic.getModels(), undefined)).toEqual([]);
     expect(providerOf('standard').getModels()[0]).toMatchObject({
       id: 'standard',

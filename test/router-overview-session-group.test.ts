@@ -71,9 +71,14 @@ describe('/router overview marks the session’s group', () => {
   });
 
   it('on a group model: that group', async () => {
-    expect(marked(await overviewHeaders({ provider: 'simple', id: 'simple:use-static' }))).toEqual([
-      'simple',
-    ]);
+    expect(marked(await overviewHeaders({ provider: 'simple', id: 'simple' }))).toEqual(['simple']);
+  });
+
+  // The `<group>:use-static` variant is gone; its id names no group.
+  it('a :use-static id names no group', async () => {
+    expect(marked(await overviewHeaders({ provider: 'simple', id: 'simple:use-static' }))).toEqual(
+      []
+    );
   });
 
   it('on a concrete model: no group', async () => {

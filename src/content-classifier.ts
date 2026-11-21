@@ -168,7 +168,6 @@ export interface ClassificationOptions {
   fallbackModel?: string;
   fallbackTimeoutMs?: number;
   context?: ClassificationContext;
-  allowStaticFallback?: boolean;
   cfg?: Config;
   cache?: Cache;
   /**
@@ -279,7 +278,7 @@ const classifyCache = new Map<string, ClassifyCacheEntry>();
 
 /** Which backend produced a classification (for /router status honesty). */
 export interface ClassificationSourceInfo {
-  /** 'hint' | 'compaction' | 'momentum' | 'cache' | 'static' | 'fallback'
+  /** 'hint' | 'compaction' | 'momentum' | 'cache' | 'fallback'
    *  (deterministic paths) or 'laya:<checkpoint>' | 'ollama:<id>' | 'cloud:<provider/id>'. */
   source: string;
   at: number;
@@ -289,7 +288,7 @@ let lastClassificationSource: ClassificationSourceInfo | null = null;
 
 /**
  * The backend that produced the LAST classification this session: either a
- * deterministic path ('hint', 'compaction', 'momentum', 'cache', 'static')
+ * deterministic path ('hint', 'compaction', 'momentum', 'cache')
  * or the model that actually answered ('ollama:<id>', 'cloud:<provider/id>').
  * Null before the first classification. /router status reads this so it can
  * never claim a classifier that isn't the one in use (the old status
@@ -940,7 +939,6 @@ async function classifyPromptUncounted(
     fallbackModel: pinnedFallbackModel,
     fallbackTimeoutMs = FALLBACK_TIMEOUT,
     context = {},
-    allowStaticFallback = false,
     allowCloudChain = false,
     escalateLowConfidence = false,
     cloudTimeoutMs = CLASSIFIER_CLOUD_TIMEOUT_MS,
@@ -1591,25 +1589,15 @@ async function classifyPromptUncounted(
       return classificationResult;
     }
 
-    // Static fallback
-    if (!allowStaticFallback) {
-      errorLog(
-        '[classifier] Ollama models failed, static classifier disabled — returning fallback'
-      );
-      noteSource('fallback');
-      return {
-        category: 'continue',
-        reason: 'Ollama unavailable, static classifier disabled',
-        confidence: 0,
-      };
-    }
-
-    errorLog('[classifier] Ollama and cloud models failed, falling back to static classification');
-    noteSource('static');
-
-    // Static result routes via its category — no escalation synthesis
-    // (see the module-level note above).
-    return classifyStatically(prompt);
+    // No classifier answered: the continue fallback (inheritPreviousCategory
+    // carries the previous category over).
+    errorLog('[classifier] Ollama and cloud models failed — returning fallback');
+    noteSource('fallback');
+    return {
+      category: 'continue',
+      reason: 'no classifier answered',
+      confidence: 0,
+    };
   };
 
   // Live A/B snapshot (owner decision 2026-10-25): when a Laya
@@ -1723,7 +1711,7 @@ async function classifyPromptUncounted(
   }
 
   // The local-first chain (ADR-0032): Ollama, then the cloud leg, then the
-  // static fallback. The whole tail lives in classifyViaLlmChain so the
+  // fallback. The whole tail lives in classifyViaLlmChain so the
   // detached background comparator (live A/B snapshot) runs EXACTLY the
   // chain the main path runs.
   return classifyViaLlmChain();
@@ -1827,212 +1815,4 @@ export function getGroupForCategory(category: string, cfg?: Config): string {
   const override = cfg?.category_groups?.[category] ?? categoryGroupOverrides?.[category];
   if (override !== undefined) return override;
   return CATEGORY_TO_GROUP[category as ClassificationResult['category']] ?? 'simple';
-}
-
-// ── Static Classification Fallback ─────────────────────────────────────
-
-/**
- * Static classification as fallback when Ollama/Cloud is not available
- * Uses keyword matching for simple categorization
- */
-export function classifyStatically(prompt: string): ClassificationResult {
-  const lowerPrompt = prompt.toLowerCase();
-
-  // Trivial: Only very specific file/list/todo context phrases
-  // The AND condition ensures the keywords appear in a relevant context
-  const trivialKeywords = [/what(?:'s| is) in\s/i];
-
-  if (
-    trivialKeywords.some((regex) => regex.test(lowerPrompt)) &&
-    (lowerPrompt.includes('file') ||
-      lowerPrompt.includes('todo') ||
-      lowerPrompt.includes('list') ||
-      lowerPrompt.includes('content'))
-  ) {
-    return {
-      category: 'simple',
-      reason: 'Simple lookup request - simple classification',
-      confidence: 0.9,
-    };
-  }
-
-  // Simple: Simple questions/explanations
-  const simpleKeywords = [
-    'explain',
-    'summarize',
-    'summary',
-    'what does',
-    'what is',
-    'tell me',
-    'describe',
-    'briefly',
-    'short',
-    'quick',
-    'meaning',
-    'definition',
-    "what's",
-    'how to',
-    'how do',
-  ];
-
-  if (simpleKeywords.some((kw) => lowerPrompt.includes(kw))) {
-    return {
-      category: 'simple',
-      reason: 'Simple question - simple classification',
-      confidence: 0.85,
-    };
-  }
-
-  // Code Simple: Small code changes
-  const codeSimpleKeywords = [
-    'fix',
-    'rename',
-    'typo',
-    'syntax',
-    'import',
-    'export',
-    'add a',
-    'remove',
-    'delete',
-    'change',
-    'update',
-    'one line',
-    'few lines',
-    'small',
-  ];
-
-  if (
-    codeSimpleKeywords.some((kw) => lowerPrompt.includes(kw)) &&
-    (lowerPrompt.includes('code') ||
-      lowerPrompt.includes('function') ||
-      lowerPrompt.includes('variable') ||
-      lowerPrompt.includes('line'))
-  ) {
-    return {
-      category: 'code_simple',
-      reason: 'Small code change - code_simple classification',
-      confidence: 0.8,
-    };
-  }
-
-  // Standard: Standard requests
-  const standardKeywords = [
-    'explain this',
-    'how does',
-    'why does',
-    'what are',
-    'difference',
-    'compare',
-    'pro and con',
-    'advantage',
-    'disadvantage',
-    'when to use',
-    'best practice',
-  ];
-
-  if (standardKeywords.some((kw) => lowerPrompt.includes(kw))) {
-    return {
-      category: 'standard',
-      reason: 'Standard request - standard classification',
-      confidence: 0.8,
-    };
-  }
-
-  // Code Complex: Complex code tasks
-  const codeComplexKeywords = [
-    'refactor',
-    'debug',
-    'architecture',
-    'design',
-    'implement',
-    'new feature',
-    'complex',
-    'large',
-    'many lines',
-    'review',
-    'analyze',
-    'optimize',
-    'performance',
-  ];
-
-  if (codeComplexKeywords.some((kw) => lowerPrompt.includes(kw))) {
-    return {
-      category: 'code_complex',
-      reason: 'Complex code task - code_complex classification',
-      confidence: 0.85,
-    };
-  }
-
-  // Design: Architecture/Design
-  const designKeywords = [
-    'architecture',
-    'system design',
-    'api design',
-    'database',
-    'schema',
-    'diagram',
-    'flowchart',
-    'uml',
-    'structure',
-  ];
-
-  if (designKeywords.some((kw) => lowerPrompt.includes(kw))) {
-    return {
-      category: 'design',
-      reason: 'Design task - design classification',
-      confidence: 0.9,
-    };
-  }
-
-  // Planning: Planning/Roadmaps
-  const planningKeywords = [
-    'roadmap',
-    'plan',
-    'prioritize',
-    'prioritization',
-    'task breakdown',
-    'tasks',
-    'steps',
-    'milestone',
-    'timeline',
-    'schedule',
-    'break down',
-  ];
-
-  if (planningKeywords.some((kw) => lowerPrompt.includes(kw))) {
-    return {
-      category: 'planning',
-      reason: 'Planning task - planning classification',
-      confidence: 0.85,
-    };
-  }
-
-  // Exploration: Open-ended questions/Brainstorming
-  const explorationKeywords = [
-    'what could',
-    'what should',
-    'brainstorm',
-    'ideas',
-    'suggestions',
-    'options',
-    'possibilities',
-    'vague',
-    'open-ended',
-    'what if',
-  ];
-
-  if (explorationKeywords.some((kw) => lowerPrompt.includes(kw))) {
-    return {
-      category: 'standard',
-      reason: 'Open-ended request - standard classification',
-      confidence: 0.75,
-    };
-  }
-
-  // Could not classify: continue inherits the previous category (see inheritPreviousCategory)
-  return {
-    category: 'continue',
-    reason: 'Could not classify - continue',
-    confidence: 0.5,
-  };
 }

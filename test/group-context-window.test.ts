@@ -93,7 +93,7 @@ describe('registerGroupProviders(): contextWindow of the virtual models', () => 
 
   it('gives the dynamic group the capped window of all static candidates (was always 128k)', () => {
     const windowsOf = register();
-    expect(windowsOf('dynamic')).toEqual({ dynamic: 250_000, 'dynamic:use-static': 250_000 });
+    expect(windowsOf('dynamic')).toEqual({ dynamic: 250_000 });
   });
 
   it('derives static group windows from their own candidates', () => {

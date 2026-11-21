@@ -418,7 +418,7 @@ describe('ADR-0030: saved HINT correction steps', () => {
     cache.hint_corrections = {
       [content]: { hintType: 'category', target: 'roadmap', savedAt: '2020-01-01T00:00:00.000Z' },
     };
-    await classifyPrompt(content, { cfg: cfgWith(), cache, allowStaticFallback: true } as any);
+    await classifyPrompt(content, { cfg: cfgWith(), cache } as any);
     const [r] = records();
     expect(r.stage).not.toBe('correction');
     expect(r.steps).toContain('correction-stale');

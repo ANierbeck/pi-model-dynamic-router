@@ -167,7 +167,7 @@ describe('sessionGroupOf', () => {
   // Review 2026-11-21 (re-review Minor 2): group models are provider === id.
   it('a concrete model whose id equals a group name is no group', () => {
     expect(of({ model: { provider: 'some-provider', id: 'planning' } })).toBeNull();
-    expect(of({ model: { provider: 'planning', id: 'planning:use-static' } })).toBe('planning');
+    expect(of({ model: { provider: 'planning', id: 'planning:use-static' } })).toBeNull();
   });
 
   // Review 2026-11-21 (re-review Minor 1): before the first request of a

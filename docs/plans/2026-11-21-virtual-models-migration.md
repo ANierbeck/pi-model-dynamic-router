@@ -101,8 +101,7 @@ What moves where:
 | Group models in `/model`, `--model`, scoped models | selectable (they are the selection) | hidden: the group provider's `filterModels` returns nothing |
 
 **Hiding the dispatch layer.** Once the virtual models are the selection, the
-group models (`planning`, `code_complex`, …, and their `:use-static`
-variants) no longer need to be selectable. Pi separates the catalog from
+group models (`planning`, `code_complex`, …) no longer need to be selectable. Pi separates the catalog from
 availability: `/model`, `--model` and scoped models list
 `getAvailable()`, which applies the provider's `filterModels` policy, while
 `getModel()` — what `route()`'s target check, `ctx.modelRegistry.find` and
@@ -177,7 +176,8 @@ hides the groups from `/model` and turns `set_model_from_group` into a pin
      default of `dynamic/dynamic` still lands on the hidden group (review
      2026-11-21). Headless children (no UI) keep their model. A `:use-static`
      selection migrates to its group, which `route()` serves through the
-     group's own method — see open decision 6.
+     group's own method; the `:use-static` variant itself is dropped (open
+     decision 6, decided).
    - `route()` maps a `failed` physical model back to the group through the
      state's run group, never through `failed.model.provider` (spike D3).
    - The router's own `getAvailable()` readers (`src/routing.ts`,
@@ -220,8 +220,8 @@ hides the groups from `/model` and turns `set_model_from_group` into a pin
    AGENTS §10 (it was skipped in the 1.6.0 round). Still open; with the
    migration done the trigger turns into "re-run the router-shape spike on
    every host upgrade", which is the recommendation.
-6. **The `:use-static` variants.** `route()` only returns `find(group, group)`,
-   so the `<group>:use-static` models stay registered (hidden) but are no
-   longer reachable; a legacy `:use-static` selection migrates to its group
-   (review 2026-11-21, Minor 2). Options: drop the variants in step 5, or
-   carry "static" in the branch state in step 3. Open.
+6. **The `:use-static` variants.** Decided 2026-11-21: dropped, together
+   with the keyword static classifier that only they reached. No variant is
+   registered any more; the legacy restore still recognises a `<group>:use-static`
+   branch selection so that old sessions migrate to router/dynamic (review
+   2026-11-21, Minor 2). The "static" leg is gone from the classifier chain.

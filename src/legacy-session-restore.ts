@@ -30,7 +30,12 @@ function field(value: unknown, key: string): unknown {
 /** API id of Pi's virtual catalog models (pi-coding-agent `VIRTUAL_MODEL_API`). */
 const PI_VIRTUAL_API = 'pi-virtual';
 
-/** The router's group models, hidden since the migration. */
+/**
+ * The router's group models, hidden since the migration. `<group>:use-static`
+ * is the variant that was registered before the migration: it is no longer
+ * registered, but an old branch still names it, so it is recognised here
+ * (and only here) to migrate that session to router/dynamic.
+ */
 export function isGroupModelRef(ref: string, groupNames: ReadonlySet<string>): boolean {
   const slash = ref.indexOf('/');
   if (slash === -1) return false;

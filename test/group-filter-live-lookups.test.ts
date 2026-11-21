@@ -219,6 +219,6 @@ describe('allDiscoveredRefs — malformed free_models', () => {
 describe('isVirtualGroupRef — one-character provider', () => {
   it('"a/a" is the virtual ref of group "a"', () => {
     expect(isVirtualGroupRef('a/a', new Set(['a']))).toBe(true);
-    expect(isVirtualGroupRef('a/a:use-static', new Set(['a']))).toBe(true);
+    expect(isVirtualGroupRef('a/a:use-static', new Set(['a']))).toBe(false);
   });
 });

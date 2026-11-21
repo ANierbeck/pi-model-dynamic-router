@@ -30,11 +30,11 @@ flowchart TD
         PROV --> OLLAMA
         OLLAMA -- "yes" --> CATOUT["Category: simple · code_simple · standard ·<br/>code_complex · design · planning · continue"]
         OLLAMA -- "no" --> CLOUD{"Cloud chain?<br/>(classifier.cloud.enabled;<br/>shipped: on)"}
-        CLOUD -- "no" --> STATIC
+        CLOUD -- "no" --> FALLBACK
         CLOUD -- "yes" --> CLOUDM["Cloud candidates in order: pinned classifier.cloud.model →<br/>probe-verified list → lazy discovery (output ≤ $5/M or $0 placeholder,<br/>≤ 20 candidates) → static free_models"]
         CLOUDM -- "structured reply" --> CATOUT
-        CLOUDM -- "every candidate fails" --> STATIC["Static classifier<br/>(heuristic last resort, only for a<br/>:use-static model variant;<br/>otherwise category continue)"]
-        STATIC --> CATOUT
+        CLOUDM -- "every candidate fails" --> FALLBACK["no classifier answered<br/>→ category continue"]
+        FALLBACK --> CATOUT
     end
 
     subgraph INH["2 · Category adjustments (src/content-classifier.ts)"]

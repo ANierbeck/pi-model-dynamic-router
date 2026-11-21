@@ -333,10 +333,8 @@ describe('register-group-providers-label', () => {
         expect(mainEntry.name).toBe('dynamic → auto-classify');
         expect(mainEntry.name).not.toContain('none');
 
-        const staticFallbackEntry = models.find((m: any) => m.id === 'dynamic:use-static');
-        expect(staticFallbackEntry).toBeDefined();
-        expect(staticFallbackEntry.name).toBe('dynamic → auto-classify (static fallback allowed)');
-        expect(staticFallbackEntry.name).not.toContain('none');
+        // No `:use-static` variant: the keyword fallback it enabled is gone.
+        expect(models.find((m: any) => m.id === 'dynamic:use-static')).toBeUndefined();
 
         // A non-dynamic group is unaffected: it still shows its resolved model
         // (or "none" if genuinely nothing resolved — that's the honest state

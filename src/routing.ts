@@ -469,7 +469,7 @@ export function getFallbackGroup(
 
 /**
  * Is `ref` one of the router's own virtual group-provider models (e.g.
- * 'trivial/trivial', 'dynamic/dynamic', 'dynamic/dynamic:use-static')?
+ * 'trivial/trivial', 'dynamic/dynamic')?
  * registerGroupProviders() registers one per group so Pi's model picker /
  * --model flag can select a group as the active model. These virtual models
  * have no GDPval and no cost of their own — the price a group model declares
@@ -488,7 +488,7 @@ export function isVirtualGroupRef(ref: string, groupNames: ReadonlySet<string>):
   const provider = ref.slice(0, slash);
   const modelId = ref.slice(slash + 1);
   if (provider === VIRTUAL_PROVIDER && modelId === VIRTUAL_MODEL_ID) return true;
-  return groupNames.has(provider) && (modelId === provider || modelId === `${provider}:use-static`);
+  return groupNames.has(provider) && modelId === provider;
 }
 
 // ── Routing Logic ─────────────────────────────────────────────────────────
@@ -669,7 +669,7 @@ export class Router {
     }
 
     // Exclude the router's own virtual group-provider models (e.g.
-    // 'trivial/trivial', 'dynamic/dynamic', 'dynamic/dynamic:use-static').
+    // 'trivial/trivial', 'dynamic/dynamic').
     // registerGroupProviders() registers one of these per group so Pi's
     // model picker / --model flag can select a group as the active model
     // (README: "You select `dynamic` group"). Pi's registry surfaces them

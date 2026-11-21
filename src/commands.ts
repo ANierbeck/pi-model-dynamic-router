@@ -237,7 +237,6 @@ export function formatClassifierStatus(input: ClassifierStatusInput): string[] {
         : `cloud (${probedCount} probed)`
     );
   }
-  legs.push('static');
   lines.push(`│ Chain: ${legs.join(' → ')}`);
   const laya = input.laya;
   if (laya) {
