@@ -35,8 +35,12 @@ export interface SelectionModelDeps {
   groups(): Readonly<Record<string, { method?: string }>>;
   /** Pins `set_model_from_group` set during a turn. */
   pins: PinHandoff;
-  /** The window Pi shows before the first response (the dispatch group's). */
-  contextWindow?: number;
+  /**
+   * The window Pi shows before the first response (the dispatch group's).
+   * Read lazily: before the first load() the config is still unset, and a
+   * group's spec exists only after registerGroupProviders().
+   */
+  readonly contextWindow?: number | undefined;
 }
 
 function groupModel(ctx: ExtensionContext, group: string): Model<Api> | undefined {

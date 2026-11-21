@@ -3,15 +3,17 @@
  * 2026-10-02, task 10): bulk_read, set_model_from_group, resolve_model_group,
  * update_model_metrics. Tool names, flags and schemas are byte-identical —
  * these are user-visible API surface (plan invariant). Note:
- * set_model_from_group is one of two sanctioned pi.setModel() callers; the
- * other is the resume restore of a router group in event-handlers.ts
- * (docs/plans/2026-11-21-continue-restores-group.md). Pure code motion.
+ * set_model_from_group pins the group on the session branch (virtual-models
+ * migration step 2, docs/plans/2026-11-21-virtual-models-migration.md): the
+ * next route() applies it and returns the pinned group's model. Pure code
+ * motion otherwise.
  */
 
 import { executeBulkRead } from './bulk-read.ts';
 import { routerLog } from './logger.ts';
 import { runAsSubCall } from './subcall-scope.ts';
 import { runInSession, sessionIdOf } from './turn-state.ts';
+import type { PinHandoff } from './virtual-selection.ts';
 import * as metricsModule from './metrics.ts';
 import { splitRef, textOf } from './utils.ts';
 import type { ExtensionContext, ExtensionAPI } from '@earendil-works/pi-coding-agent';
@@ -33,6 +35,8 @@ interface ToolDeps {
   readonly fmtModel: (ref: string, i: number, sel: boolean) => string;
   readonly getM: (ref: string) => Metrics;
   readonly load: () => void;
+  /** Pins set during a turn, handed to the selection layer's next route(). */
+  readonly pins: PinHandoff;
   readonly pi: ExtensionAPI;
   readonly resolve: (name: string) => { selected: string; candidates: string[] } | null;
   readonly router: Router;
@@ -89,7 +93,7 @@ export function createTools(rt: ToolDeps): void {
     name: 'set_model_from_group',
     label: 'Set Model from Group',
     description:
-      'Resolve a model group and immediately switch the current session to use the selected model. Combines resolve_model_group + model switch in one step.',
+      'Resolve a model group and pin it for this session branch: the router serves this group from the next request on. "none" is not a group — resolve_model_group does the lookup only.',
     parameters: Type.Object({ group: Type.String({ description: 'Model group name' }) }),
     async execute(
       _id: string,
@@ -105,28 +109,22 @@ export function createTools(rt: ToolDeps): void {
         throw new Error(
           `No models for group "${params.group}". Available: ${Object.keys(rt.cfg.model_groups).join(', ')}`
         );
-      for (const ref of res.candidates) {
-        const { provider, modelId } = splitRef(ref);
-        const model = ctx.modelRegistry.find(provider, modelId);
-        if (model && (await rt.pi.setModel(model))) {
-          runInSession(sessionIdOf(ctx), () => {
-            rt.activeGroup = name;
-            rt.router.setActiveGroup(name); // Set active group in router for display
-            rt.router.setCurModel(ref); // Set current model in router for status line
-          });
-          const m = rt.getM(ref);
-          return {
-            content: [
-              {
-                type: 'text',
-                text: `${ref} (${name}, gdp:${m.gdpval}, tps:${Math.round(m.throughput_tps)})`,
-              },
-            ],
-            details: { group: name, selected: ref, provider, modelId },
-          };
-        }
-      }
-      throw new Error(`No available model in "${name}". Tried: ${res.candidates.join(', ')}`);
+      const m = rt.getM(res.selected);
+      await Promise.resolve();
+      rt.pins.set(sessionIdOf(ctx), name);
+      // The status triple names the model the NEXT request is expected to
+      // serve (the group's top candidate); the served model appears on the
+      // assistant message.
+      const { provider, modelId } = splitRef(res.selected);
+      return {
+        content: [
+          {
+            type: 'text',
+            text: `${res.selected} (${name}, gdp:${m.gdpval}, tps:${Math.round(m.throughput_tps)})`,
+          },
+        ],
+        details: { group: name, selected: res.selected, provider, modelId },
+      };
     },
   });
 

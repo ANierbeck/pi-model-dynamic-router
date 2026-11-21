@@ -566,6 +566,9 @@ const defaultExport = function (pi: ExtensionAPI): void {
     });
 
   createEventHandlers({
+    get pins() {
+      return selectionPins;
+    },
     get activeGroup() {
       return turn().activeGroup;
     },
@@ -688,7 +691,26 @@ const defaultExport = function (pi: ExtensionAPI): void {
     },
   });
 
+  // The session's selection (docs/plans/2026-11-21-virtual-models-migration.md,
+  // step 2): `router/dynamic` routes each request to a hidden group model.
+  // The pin handoff exists before every consumer (tools and route()), so a
+  // pin set in a turn reaches the next route(). The window is read lazily:
+  // before the first load() the config is still unset, and the dispatch
+  // group's spec exists only after registerGroupProviders().
+  const selectionPins = createPinHandoff();
+  registerSelectionModel(pi, {
+    groups: (): Config['model_groups'] => cfg.model_groups ?? {},
+    pins: selectionPins,
+    get contextWindow() {
+      const group = dispatchGroupOf(cfg?.model_groups ?? {});
+      return group ? groupContextWindow(group) : undefined;
+    },
+  });
+
   createTools({
+    get pins() {
+      return selectionPins;
+    },
     get activeGroup() {
       return turn().activeGroup;
     },
@@ -1029,19 +1051,6 @@ const defaultExport = function (pi: ExtensionAPI): void {
   metricsModule.loadModelMap(extDir);
   loadCache();
   registerGroupProviders();
-  // The session's selection (docs/plans/2026-11-21-virtual-models-migration.md,
-  // step 2): `router/dynamic` routes each request to a hidden group model.
-  const selectionPins = createPinHandoff();
-  // load() above assigned cfg; read through a closure like every other reader.
-  const configuredGroups = (): Config['model_groups'] => cfg.model_groups ?? {};
-  const loadDispatchGroup = dispatchGroupOf(configuredGroups());
-  const loadWindow = loadDispatchGroup ? groupContextWindow(loadDispatchGroup) : undefined;
-  registerSelectionModel(pi, {
-    groups: configuredGroups,
-    pins: selectionPins,
-    ...(loadWindow ? { contextWindow: loadWindow } : {}),
-  });
-
   // Build the streaming orchestrator context once all helpers are defined.
   // Fields that change mid-session (cfg, cache) are passed as mutable object
   // references so the orchestrator always reads the current value.

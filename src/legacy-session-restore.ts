@@ -1,23 +1,20 @@
 /**
- * `--continue` restores the router group (docs/plans/2026-11-21-continue-restores-group.md).
- *
- * Pi restores a resumed session's model with getBranchSelection: a
- * `model_change` only outlives the assistant messages after it when the
- * model it names is a Pi virtual model (`api: "pi-virtual"`). Router group
- * models are ordinary providers, and every response names the physical model
- * that answered, so a resumed router session lands on that physical model and
- * is no longer routed. This module decides when to put the group back.
+ * Old sessions (before the virtual-models migration, plan
+ * docs/plans/2026-11-21-virtual-models-migration.md step 2): the selection
+ * was a group model, whose `model_change` only outlived the assistant
+ * messages after it when the model it names is a Pi virtual model
+ * (`api: "pi-virtual"`) — so `pi --continue` / `/resume` / `/fork` landed on
+ * the physical model that answered last. At session_start, restore the
+ * virtual selection: re-select `router/dynamic` (Pi rewrites the branch's
+ * last selection) and pin the group the old branch had selected.
  */
-
-import { isVirtualGroupRef } from './routing.ts';
-
 /** A model as Pi names it: provider + id. */
 export interface ModelRefLike {
   readonly provider: string;
   readonly id: string;
 }
 
-/** A group model to select again: the provider and model id of a `model_change`. */
+/** A group model a pre-migration branch selected: a `model_change`'s ref. */
 export interface GroupSelection {
   readonly provider: string;
   readonly modelId: string;
@@ -33,23 +30,33 @@ function field(value: unknown, key: string): unknown {
 /** API id of Pi's virtual catalog models (pi-coding-agent `VIRTUAL_MODEL_API`). */
 const PI_VIRTUAL_API = 'pi-virtual';
 
+/** The router's group models, hidden since the migration. */
+export function isGroupModelRef(ref: string, groupNames: ReadonlySet<string>): boolean {
+  const slash = ref.indexOf('/');
+  if (slash === -1) return false;
+  const provider = ref.slice(0, slash);
+  const modelId = ref.slice(slash + 1);
+  return groupNames.has(provider) && (modelId === provider || modelId === `${provider}:use-static`);
+}
+
 /**
- * The group to select again, or null. Only when Pi fell back to the last
- * responder: the branch's latest `model_change` names one of the router's
- * group models (a deliberate `/model` switch to a concrete model writes its
- * own `model_change` and wins), the current model is no group model, and it
- * is the model of the latest assistant reply that does not name a Pi virtual
- * model — exactly the reply getBranchSelection returns for a non-virtual
- * selection, whatever its stopReason (the router forwards a physical model's
- * aborted or failed message unchanged; review 2026-11-21).
+ * The group a PRE-MIGRATION branch had selected, or null. Only when Pi fell
+ * back to the last responder: the branch's latest `model_change` names one
+ * of the router's group models (a deliberate `/model` switch to a concrete
+ * model writes its own `model_change` and wins), the current model is no
+ * group model, and it is the model of the latest assistant reply that does
+ * not name a Pi virtual model — exactly the reply getBranchSelection returns
+ * for a non-virtual selection, whatever its stopReason (the router forwards
+ * a physical model's aborted or failed message unchanged; review
+ * 2026-11-21).
  */
-export function groupToRestore(
+export function legacyGroupToRestore(
   branch: readonly unknown[],
   current: ModelRefLike | undefined,
   groupNames: ReadonlySet<string>
 ): GroupSelection | null {
   if (!current) return null;
-  if (isVirtualGroupRef(`${current.provider}/${current.id}`, groupNames)) return null;
+  if (isGroupModelRef(`${current.provider}/${current.id}`, groupNames)) return null;
   let lastReply: { provider: unknown; model: unknown } | undefined;
   for (let i = branch.length - 1; i >= 0; i--) {
     const entry = branch[i];
@@ -58,7 +65,7 @@ export function groupToRestore(
       const provider = field(entry, 'provider');
       const modelId = field(entry, 'modelId');
       if (typeof provider !== 'string' || typeof modelId !== 'string') return null;
-      if (!isVirtualGroupRef(`${provider}/${modelId}`, groupNames)) return null;
+      if (!isGroupModelRef(`${provider}/${modelId}`, groupNames)) return null;
       // A selection after the last reply: Pi restored it itself.
       if (!lastReply) return null;
       const fellBack = lastReply.provider === current.provider && lastReply.model === current.id;

@@ -15,7 +15,8 @@ import { costTracker } from './cost-tracker.ts';
 import { handleReadDelegation } from './delegation.ts';
 import { runAsSubCall } from './subcall-scope.ts';
 import { setProjectLogDir, debugLog, routerLog, warnLog } from './logger.ts';
-import { branchThinkingLevel, groupToRestore } from './session-restore.ts';
+import { branchThinkingLevel, legacyGroupToRestore } from './legacy-session-restore.ts';
+import { VIRTUAL_PROVIDER, VIRTUAL_MODEL_ID, type PinHandoff } from './virtual-selection.ts';
 import * as metricsModule from './metrics.ts';
 import { setPiRegisteredProviders, setModelRegistry } from './metrics.ts';
 import { countSessionErrorsSince } from './session-errors.ts';
@@ -63,6 +64,8 @@ interface EventHandlerDeps {
   readonly load: () => void;
   readonly loadCache: () => void;
   readonly pi: ExtensionAPI;
+  /** Pins `set_model_from_group` set during a turn (the selection layer's). */
+  readonly pins: PinHandoff;
   readonly rateLimitManager: RateLimitManager;
   readonly recordOk: (ref: string) => void;
   readonly registerGroupModels: (ctx: ExtensionContext) => void;
@@ -123,15 +126,19 @@ function inSessionOf<E, R>(
 }
 
 /**
- * `pi --continue` / `/resume` / `/fork` on a router session: Pi restores the
- * physical model that answered last instead of the group (a `model_change`
- * only outlives later replies for Pi virtual models). Select the group again
- * (docs/plans/2026-11-21-continue-restores-group.md). Runs after the group
- * models are registered, so the registry knows the group model.
+ * Old sessions (before the virtual-models migration, plan
+ * docs/plans/2026-11-21-virtual-models-migration.md step 2): the selection
+ * was a group model, so Pi restored the physical model that answered last
+ * (src/legacy-session-restore.ts). Restore the virtual selection: re-select
+ * `router/dynamic` — Pi rewrites the branch's last selection — and pin the
+ * group the old branch had selected for the selection layer's next route().
+ * Runs after the group models are registered, so the registry knows the
+ * group model.
  */
-async function restoreGroupSelection(
+async function restoreVirtualSelection(
   rt: EventHandlerDeps,
   ctx: ExtensionContext,
+  pins: PinHandoff,
   pendingRestore: { ref: string | null }
 ): Promise<void> {
   // Only a session with a UI (TUI/RPC). pi-subagents starts forked children
@@ -141,31 +148,42 @@ async function restoreGroupSelection(
   if (ctx.hasUI !== true) return;
   const groupNames = new Set(Object.keys(rt.cfg.model_groups ?? {}));
   const branch = ctx.sessionManager?.getBranch?.() ?? [];
-  const target = groupToRestore(branch, ctx.model, groupNames);
+  const target = legacyGroupToRestore(branch, ctx.model, groupNames);
   if (!target) return;
-  const model = ctx.modelRegistry.find(target.provider, target.modelId);
-  if (!model) return;
-  const ref = `${target.provider}/${target.modelId}`;
+  const selection = ctx.modelRegistry.find(VIRTUAL_PROVIDER, VIRTUAL_MODEL_ID);
+  if (!selection) {
+    warnLog(
+      '[router] resumed session: router/dynamic is not registered; keeping the restored model'
+    );
+    return;
+  }
+  const groupModel = ctx.modelRegistry.find(target.provider, target.modelId);
+  if (!groupModel) return;
   // ctx.model is a live getter: capture what Pi restored before the switch.
   const restored = ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : '(none)';
   // Pi's setModel takes the thinking level from the settings; Pi's resume
   // takes it from the branch. Put the branch's level back after the switch.
   const level = branchThinkingLevel(branch);
   // The switch emits model_select (source "set"): not a user pick.
-  pendingRestore.ref = ref;
+  pendingRestore.ref = `${VIRTUAL_PROVIDER}/${VIRTUAL_MODEL_ID}`;
   try {
-    const ok = await rt.pi.setModel(model);
+    // A group other than the classifying group becomes the pin for the
+    // selection layer's next route().
+    if (target.provider !== 'dynamic') pins.set(sessionIdOf(ctx), target.provider);
+    const ok = await rt.pi.setModel(selection);
     if (!ok) {
-      warnLog(`[router] resumed session: could not select ${ref} again`);
+      warnLog('[router] resumed session: could not select router/dynamic again');
       return;
     }
     if (level && rt.pi.getThinkingLevel() !== level) {
       rt.pi.setThinkingLevel(level as Parameters<typeof rt.pi.setThinkingLevel>[0]);
     }
-    routerLog(`[router] resumed session: selected ${ref} again (Pi restored ${restored})`);
+    routerLog(
+      `[router] resumed session: pre-migration selection ${target.provider}/${target.modelId}, routed via ${VIRTUAL_PROVIDER}/${VIRTUAL_MODEL_ID} (Pi restored ${restored})`
+    );
   } catch (err: unknown) {
     warnLog(
-      `[router] resumed session: selecting ${ref} failed: ${err instanceof Error ? err.message : textOf(err)}`
+      `[router] resumed session: selecting router/dynamic failed: ${err instanceof Error ? err.message : textOf(err)}`
     );
   } finally {
     pendingRestore.ref = null;
@@ -260,7 +278,7 @@ export function createEventHandlers(rt: EventHandlerDeps): void {
       rt.registerGroupModels(ctx);
       // Returned below: Pi awaits session_start, so a prompt sent right after
       // the start already reaches the restored group.
-      const restoring = restoreGroupSelection(rt, ctx, pendingRestore);
+      const restoring = restoreVirtualSelection(rt, ctx, rt.pins, pendingRestore);
       // scan() swallows per-provider failures by design, but a top-level
       // throw (e.g. from checkScanSanity or saveCache) must not disappear
       // silently (final v1.6.0 review minor #6).

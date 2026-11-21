@@ -201,7 +201,7 @@ Modules without their own heading above. One row per file, so every `src/` modul
 | `src/budget-pacing.ts` | Declared spend allowance per provider (user-layer key) and its pacing |
 | `src/bulk-read.ts` | `bulk_read` tool and the `read` pre-call block (ADR-0007) |
 | `src/cache-stats.ts` | Provider-reported usage block of an assistant message (all fields optional); cache statistics |
-| `src/session-restore.ts` | `--continue` / `/resume` / `/fork`: when Pi restored the physical model that answered last, the router group the branch selected (selected again at `session_start`) |
+| `src/legacy-session-restore.ts` | Old sessions (pre-migration): when Pi restored the physical model that answered last, the group the branch had selected — migrated at `session_start` to `router/dynamic` + pin |
 | `src/cache-warming.ts` | Honoring Pi's `cacheWarming`: warm-request detection, the cache economics a group model declares, Pi's `cache_warm` usage entries |
 | `src/cache.ts` | `CacheManager`: the scan cache file and the `usage_log` entry shape |
 | `src/capabilities.ts` | Raw entries of provider models-list responses (the shape varies per provider) |
