@@ -40,7 +40,7 @@ export function walkStubWorld(config: WalkStubConfig = {}): WalkWorld {
   const ctx: any = {
     cfg: { model_groups: { standard: { method: 'best' } }, model_metrics: {}, providers: {} },
     cache: {},
-    router: { setActiveGroup: vi.fn(), setCurModel: vi.fn() },
+    router: { setCurModel: vi.fn() },
     escalation: { level: 'standard' },
     resolve: () => null,
     estimateContextTokens: () => 100,

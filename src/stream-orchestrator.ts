@@ -356,11 +356,18 @@ export interface StreamOrchestratorContext {
  * the reader (health, breaker, metrics). Every stream-opening path of
  * driveStream goes through this one function.
  */
-function recordServedRef(ctx: StreamOrchestratorContext, ref: string): void {
+function recordServedRef(ctx: StreamOrchestratorContext, ref: string, groupName?: string): void {
   if (inSubCall()) return;
   ctx.router.setCurModel(ref);
-  ctx.router.setActiveGroup(ctx.activeGroup);
   ctx.lastDynamicModel = ref;
+  // Step 5 (owner decision 2026-11-21): the served stream writes the branch
+  // state's `group` — the group of the candidate the stream is opened on
+  // (the classified group, or the fallback group after a failover; called
+  // before tryStream, so a failed last attempt still names its group). The
+  // per-group compaction budget and the decision log's previous-turn group
+  // read it, so both survive a restart. An unchanged group appends nothing
+  // (createSelectionStateSource).
+  if (groupName) ctx.activeGroup = groupName;
 }
 
 export class StreamOrchestrator {
@@ -1120,7 +1127,6 @@ export class StreamOrchestrator {
     sourceModel?: SourceModelInfo
   ): Promise<void> {
     const ctx = this.ctx;
-    if (ctx.activeGroup) ctx.router.setActiveGroup(ctx.activeGroup);
 
     const allErrors: { ref: string; message: string }[] = [];
     const pushError = (ref: string, message: string): void => {
@@ -1274,7 +1280,7 @@ export class StreamOrchestrator {
 
       const prefix = label ? `${label} · ${ref}` : ref;
       pushRouterInfoLogged(proxy, `> [router] ${prefix}\n\n`);
-      recordServedRef(ctx, ref);
+      recordServedRef(ctx, ref, groupName);
 
       let attemptSucceeded = false;
       // M3: the stream's own duration — the only honest latency sample for
@@ -1695,7 +1701,7 @@ export class StreamOrchestrator {
           );
           await sleepMs(probeSecs * 1000 + 2000);
         }
-        recordServedRef(ctx, probeRef);
+        recordServedRef(ctx, probeRef, groupName);
         const probeAttempt = openCandidateAttempt(options);
         const probeTarget = await ctx
           .tryStream(probeRef, context, probeAttempt.options)
@@ -1822,7 +1828,7 @@ export class StreamOrchestrator {
             `> [router] All models in cooldown, retrying ${bestRef} (shortest cooldown, ${bestSecs}s)...\n\n`
           );
         }
-        recordServedRef(ctx, bestRef);
+        recordServedRef(ctx, bestRef, groupName);
         const collapseAttempt = openCandidateAttempt(options);
         const target = await ctx
           .tryStream(bestRef, context, collapseAttempt.options)

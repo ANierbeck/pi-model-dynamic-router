@@ -18,7 +18,7 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 
 /** What one session remembers between turns. */
 export interface TurnState {
-  /** The ref pi currently shows for the session (the group ref in group sessions). */
+  /** The ref Pi currently shows for the session (its selection, e.g. `router/dynamic`). */
   curModel: string;
   /** Last concrete model that served a stream — the first candidate of a tool follow-up. */
   lastDynamicModel: string;
@@ -48,15 +48,15 @@ export interface TurnState {
 /**
  * Router-side per-session fields (the driving-model pin and the factual ref).
  *
- * NOTE: `curModel` also exists on TurnState — the extension side tracks the
- * ref pi shows, the Router the one that factually streamed. They are set by
- * different code paths (tools.ts sets both, model_select only the extension
- * side), so they are kept apart until they can be merged (plan step 5).
- * `activeGroup` lives in the session branch state since step 3 (the Router
- * keeps its own factual copy).
+ * `curModel` here is the ref that factually SERVED (written only by the
+ * stream, timestamped for the stale guard). It is not TurnState.curModel, the
+ * SELECTION Pi shows (`router/dynamic` or a concrete model; model_select and
+ * turn_start write it), nor TurnState.lastDynamicModel, which the stream also
+ * sets at selection time before a candidate serves. Migration plan step 5
+ * kept the three apart on purpose: they hold different values. The session's
+ * group lives only in the branch state (step 5 removed the Router's copy).
  */
 export interface RouterTurnState {
-  activeGroup: string | null;
   curModel: string;
   curModelAt: number;
   /**
@@ -172,7 +172,6 @@ export function emptyTurnState(): TurnState {
 
 export function emptyRouterTurnState(): RouterTurnState {
   return {
-    activeGroup: null,
     curModel: '',
     curModelAt: 0,
     turnDriverRef: '',

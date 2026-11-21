@@ -131,6 +131,28 @@ describe('selection state source (step 3)', () => {
     expect(makeSource(mgr).read()?.lastCategory).toBeUndefined();
   });
 
+  // Step 5: every served stream now writes the group (owner decision
+  // 2026-11-21), and the run group / category are re-written per turn. A
+  // write that leaves the stored state as it is must not append an entry, or
+  // every tool step and failover hop grows the session file by one entry.
+  it('a write that changes nothing appends no entry', () => {
+    const mgr = fakeManager([
+      stateData({
+        pin: null,
+        group: 'planning',
+        runGroup: 'planning',
+        lastCategory: 'planning',
+      } as SelectionState),
+    ]);
+    const src = makeSource(mgr);
+    src.write({ group: 'planning' });
+    src.write({ runGroup: 'planning', lastCategory: 'planning' });
+    expect(mgr.appendCustomEntry).not.toHaveBeenCalled();
+    // A real change still persists.
+    src.write({ group: 'simple' });
+    expect(mgr.appendCustomEntry).toHaveBeenCalledTimes(1);
+  });
+
   it('a valid stored lastCategory reads back as-is', () => {
     const mgr = fakeManager([stateData({ pin: null, lastCategory: 'planning' } as SelectionState)]);
     expect(makeSource(mgr).read()?.lastCategory).toBe('planning');

@@ -31,17 +31,18 @@ export const STATE_ENTRY = 'pi.virtual-model-state';
  * the current tool follow-up run's group, `lastCategory` the previous turn's
  * classified category (inherited by terse follow-ups).
  *
- * `group` has no production writer yet (review step-3 round 1, Important 1):
- * the served group is recorded per session in `ServedGroups` (session-scoped),
- * `model_select` only clears this field to null, and the compaction budget
- * therefore still resolves from a null group — as it did before step 3. The
- * field round-trips whatever older routers persisted; whether a serve should
- * WRITE it is the step-5 consolidation's (or the owner's) decision.
+ * `group` is the group of the candidate a stream was last opened on, on this
+ * branch (the classified group, or the fallback group after a failover),
+ * written by the orchestrator's recordServedRef (step 5, owner decision 2026-11-21). The
+ * per-group compaction budget and the decision log's previous-turn group read
+ * it, so both survive a restart; `model_select` clears it to null. It is not
+ * route()'s dispatch group (`router/dynamic` dispatches to `dynamic` unless
+ * pinned): that one lives per process in `ServedGroups`.
  */
 export interface SelectionState {
   /** The pinned group, or null when the classifying group decides. */
   readonly pin: string | null;
-  /** Reserved; currently only written null (model_select) — see above. */
+  /** The group that last served a stream on this branch — see above. */
   readonly group?: string | null | undefined;
   readonly runGroup?: string | null | undefined;
   readonly lastCategory?: string | undefined;
@@ -157,7 +158,13 @@ export function createSelectionStateSource(io: {
     },
     write(partial): void {
       try {
-        io.appendState(foldSelectionState(this.read(), partial));
+        const current = this.read();
+        const next = foldSelectionState(current, partial);
+        // Every served stream writes the group (step 5) and every turn the
+        // run group / category: an unchanged state appends nothing, or each
+        // tool step and failover hop would grow the session file.
+        if (current !== undefined && sameSelectionState(current, next)) return;
+        io.appendState(next);
       } catch (err) {
         // The io seam no-ops quietly itself when no manager is in scope
         // (plain process code); a THROW is a real persistence failure —
@@ -167,6 +174,15 @@ export function createSelectionStateSource(io: {
       }
     },
   };
+}
+
+function sameSelectionState(a: SelectionState, b: SelectionState): boolean {
+  return (
+    a.pin === b.pin &&
+    a.group === b.group &&
+    a.runGroup === b.runGroup &&
+    a.lastCategory === b.lastCategory
+  );
 }
 
 /** A group config as far as the selection reads it. */

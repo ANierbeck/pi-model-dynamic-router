@@ -20,7 +20,7 @@
 //   - resolve() skips unknown fallback groups and keeps cascading past an
 //     EMPTY fallback group; dynamic groups resolve to null
 //   - detectGroup sorts thresholds descending for any object order
-//   - Router.getActiveGroup, a pipeline group without steps
+//   - a pipeline group without steps
 
 import { describe, it, expect, beforeAll } from 'vitest';
 import { Router } from '../src/routing.ts';
@@ -261,16 +261,5 @@ describe('detectGroup — an unscored ref takes the first UNRESTRICTED tier of t
   it('an explicit min_gdpval of 0 still counts as unrestricted; a positive floor does not', () => {
     expect(detect({ simple: { method: 'best', min_gdpval: 0 } })).toBe('simple');
     expect(detect({ simple: { method: 'best', min_gdpval: 100 } })).toBeNull();
-  });
-});
-
-describe('Router.getActiveGroup', () => {
-  it('reads back what setActiveGroup wrote, null by default', () => {
-    const router = mk();
-    expect(router.getActiveGroup()).toBeNull();
-    router.setActiveGroup('rr');
-    expect(router.getActiveGroup()).toBe('rr');
-    router.setActiveGroup(null);
-    expect(router.getActiveGroup()).toBeNull();
   });
 });

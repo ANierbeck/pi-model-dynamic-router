@@ -1370,11 +1370,13 @@ export class Router {
   // ── Group Detection ─────────────────────────────────────────────────────
 
   /**
-   * Detects the group for a model reference based on GDPval thresholds
+   * Detects the group for a model reference based on GDPval thresholds. The
+   * session's own group (pin, served group) is not this method's: it lives
+   * in the branch state and sessionGroupOf names it (migration plan step 5
+   * removed the Router's copy, which went stale on a switch to a concrete
+   * model).
    */
   detectGroup(ref: string): string | null {
-    if (this.turn.activeGroup) return this.turn.activeGroup;
-
     // With dynamic model discovery, detect group based on GDPval thresholds
     const gdpval = lookupGdp(ref);
 
@@ -1555,15 +1557,5 @@ export class Router {
       ...(why?.has(ref) ? { why: why.get(ref) as string } : {}),
     }));
     return { models, total };
-  }
-
-  // ── Getter ────────────────────────────────────────────────────────────────
-
-  getActiveGroup(): string | null {
-    return this.turn.activeGroup;
-  }
-
-  setActiveGroup(group: string | null): void {
-    this.turn.activeGroup = group;
   }
 }

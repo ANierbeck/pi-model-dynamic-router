@@ -10,8 +10,8 @@
 //   - min_cost_if_all_priced dispatch with group top_k
 //   - generic else-branch (any sortBy method) with top_k
 //   - 'best' must NOT fall into the tiered branch
-//   - detectGroup: activeGroup pinning, dynamic-group exclusion,
-//     threshold ordering (highest min_gdpval first)
+//   - detectGroup: dynamic-group exclusion, threshold ordering (highest
+//     min_gdpval first)
 
 import { describe, it, expect, beforeAll } from 'vitest';
 import { Router } from '../src/routing.js';
@@ -109,15 +109,7 @@ describe('resolveGroup method dispatch (via public resolve)', () => {
   });
 });
 
-describe('detectGroup — pinning, dynamic exclusion, threshold order', () => {
-  it('activeGroup pinning wins over threshold detection', () => {
-    const router = new Router(testConfig, cache, new Map());
-    router.setActiveGroup('strategic');
-    expect(router.detectGroup('provx/aaa')).toBe('strategic');
-    router.setActiveGroup(null);
-    expect(router.detectGroup('provx/aaa')).toBe('tacticalish');
-  });
-
+describe('detectGroup — dynamic exclusion, threshold order', () => {
   it('dynamic groups are NOT threshold candidates; highest min_gdpval wins', () => {
     // aaa scores 900. Threshold order (desc): dyno is dynamic (excluded),
     // tacticalish (700) before complexish (400) → 900 >= 700 → tacticalish.
