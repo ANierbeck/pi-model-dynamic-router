@@ -2,6 +2,7 @@
 
 **Status:** proposed — 2026-11-21, written on the owner's request ("create a
 plan for the switch to Pi's virtual models"). Not approved; nothing is built.
+Open decision 3 decided by the owner 2026-11-21: one virtual model.
 
 **Verified against:** `main` @ `36ddef3`; pi-coding-agent 1.6.0:
 `docs/virtual-models.md`; `dist/core/virtual-models.js` L29–42
@@ -120,7 +121,9 @@ users before step 4.
      selection on `--continue` (`agent-session-services.js` suggests yes;
      verify end to end), including print mode.
    - `/tree` and fork: state follows the branch; pi-subagents children given
-     `router/<group>` route on their own branch.
+     `router/dynamic` route on their own branch, and a delegation that names
+     a category group still reaches it (open decision 3: the groups are no
+     longer selectable models).
    - Footer and `/session` with a virtual selection (the router replaces Pi's
      footer — what does `ctx.model` show, where does the routed model come
      from).
@@ -135,12 +138,17 @@ users before step 4.
    - Re-run `scripts/virtual-route-shadow.ts` on current logs (the 93-turn
      figure is from 2026-10-28 → 2026-11-06).
    Exit: a written go/no-go per item; any no-go stops the plan before step 2.
-2. **Virtual layer behind a switch.** Register one virtual model per
-   configured group at extension load (same place as
-   `registerGroupProviders()`). `route()` resolves the group (classification
-   and `HINT:` for `user`, the remembered run group for `continuation`, the
-   failed request's group for `retry`, the group itself for `direct`) and
-   returns the group provider model. The decision reaches `groupStream`
+2. **Virtual layer behind a switch.** Register the one virtual model
+   `router/dynamic` (open decision 3) at extension load (same place as
+   `registerGroupProviders()`). `route()` resolves the group (a pinned group
+   from the branch state first, then classification and `HINT:` for `user`,
+   the remembered run group for `continuation`, the failed request's group
+   for `retry`, a fixed group for `direct`) and returns that group's provider
+   model. `set_model_from_group` (`src/tools.ts`) today switches the session
+   to a concrete model of the group with `pi.setModel`, which under the
+   virtual selection would leave routing altogether; it becomes a group pin
+   in the branch state instead (the selection stays `router/dynamic`), with
+   a way to release the pin. The decision reaches `groupStream`
    through a one-request handoff keyed by session id (the spike's finding:
    `streamSimple` has no context). Off by default; the config key is an open
    decision.
@@ -169,12 +177,13 @@ users before step 4.
    virtual models as experimental (CHANGELOG 0.99.0) and no later entry says
    otherwise (the 1.6.0 docs and type comments no longer use the word), and
    the release has a critical path of its own already.
-3. **Naming and what stays visible.** Virtual models under a provider id of
-   their own (e.g. `router/<group>`); the group providers are hidden (see
+3. **Naming and what stays visible — decided by the owner 2026-11-21: one
+   virtual model**, `router/dynamic`. The group providers are hidden (see
    "Hiding the dispatch layer"; the earlier claim of this plan that Pi cannot
-   hide them was wrong). Open: a virtual model per group, or only
-   `router/dynamic` (the category groups then reachable only through
-   classification, `HINT:` and `set_model_from_group`).
+   hide them was wrong). The category groups are reached only through
+   classification, `HINT:` and `set_model_from_group` (which becomes a pin,
+   step 2). Still open within it: the exact provider id, and the fixed group
+   for `direct` requests (compaction summaries).
 4. **The switch and its default** in step 2 (user config key, or a
    `/router` command), and the criteria for the default flip in step 4.
 5. **Widen the re-evaluation trigger** of the 2026-11-04 plan beyond retry
