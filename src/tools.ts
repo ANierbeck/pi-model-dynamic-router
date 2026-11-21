@@ -3,8 +3,9 @@
  * 2026-10-02, task 10): bulk_read, set_model_from_group, resolve_model_group,
  * update_model_metrics. Tool names, flags and schemas are byte-identical —
  * these are user-visible API surface (plan invariant). Note:
- * set_model_from_group remains the ONLY sanctioned pi.setModel() caller.
- * Pure code motion.
+ * set_model_from_group is one of two sanctioned pi.setModel() callers; the
+ * other is the resume restore of a router group in event-handlers.ts
+ * (docs/plans/2026-11-21-continue-restores-group.md). Pure code motion.
  */
 
 import { executeBulkRead } from './bulk-read.ts';

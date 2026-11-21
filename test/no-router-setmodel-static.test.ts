@@ -10,8 +10,12 @@
  * the session model on every prompt and was only caught by a code review
  * (index.ts refactor, review B, 2026-10-02).
  *
- * This test scans every production source file and allows exactly ONE call
- * site: the user-invoked `set_model_from_group` tool in src/tools.ts.
+ * This test scans every production source file and allows exactly TWO call
+ * sites, both owner-decided: the user-invoked `set_model_from_group` tool in
+ * src/tools.ts, and the `--continue` group restore in src/event-handlers.ts
+ * (review round 2026-11-21; plan
+ * docs/plans/2026-11-21-continue-restores-group.md). Anything else — most of
+ * all a per-prompt switch — must fail here.
  */
 import { describe, it, expect } from 'vitest';
 import fs from 'node:fs';
@@ -45,9 +49,10 @@ describe('router never calls pi.setModel() (static guard)', () => {
     expect(productionSources().length).toBeGreaterThan(20);
   });
 
-  it('only src/tools.ts (set_model_from_group) calls setModel()', () => {
+  it('only src/tools.ts and src/event-handlers.ts call setModel()', () => {
     const offenders: string[] = [];
     let toolsCalls = 0;
+    let restoreCalls = 0;
     for (const file of productionSources()) {
       const calls = setModelCallLines(file);
       const rel = path.relative(repoRoot, file);
@@ -55,11 +60,16 @@ describe('router never calls pi.setModel() (static guard)', () => {
         toolsCalls = calls.length;
         continue;
       }
+      if (rel === path.join('src', 'event-handlers.ts')) {
+        restoreCalls = calls.length;
+        continue;
+      }
       for (const line of calls) offenders.push(`${rel}: ${line.trim()}`);
     }
     expect(offenders).toEqual([]);
-    // The one legitimate call site must still exist — otherwise the regex
+    // The two legitimate call sites must still exist — otherwise the regex
     // has silently stopped matching and this test proves nothing.
     expect(toolsCalls).toBe(1);
+    expect(restoreCalls).toBe(1);
   });
 });

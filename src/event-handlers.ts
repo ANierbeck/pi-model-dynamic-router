@@ -15,6 +15,7 @@ import { costTracker } from './cost-tracker.ts';
 import { handleReadDelegation } from './delegation.ts';
 import { runAsSubCall } from './subcall-scope.ts';
 import { setProjectLogDir, debugLog, routerLog, warnLog } from './logger.ts';
+import { branchThinkingLevel, groupToRestore } from './session-restore.ts';
 import * as metricsModule from './metrics.ts';
 import { setPiRegisteredProviders, setModelRegistry } from './metrics.ts';
 import { countSessionErrorsSince } from './session-errors.ts';
@@ -121,7 +122,60 @@ function inSessionOf<E, R>(
   return (ev, ctx) => runInSession(sessionIdOf(ctx), () => handler(ev, ctx));
 }
 
+/**
+ * `pi --continue` / `/resume` / `/fork` on a router session: Pi restores the
+ * physical model that answered last instead of the group (a `model_change`
+ * only outlives later replies for Pi virtual models). Select the group again
+ * (docs/plans/2026-11-21-continue-restores-group.md). Runs after the group
+ * models are registered, so the registry knows the group model.
+ */
+async function restoreGroupSelection(
+  rt: EventHandlerDeps,
+  ctx: ExtensionContext,
+  pendingRestore: { ref: string | null }
+): Promise<void> {
+  // Only a session with a UI (TUI/RPC). pi-subagents starts forked children
+  // headless with reason 'startup' and a copy of the parent's branch; a child
+  // given exactly the model that answered the parent last would look like
+  // Pi's fallback, and its explicit model must win.
+  if (ctx.hasUI !== true) return;
+  const groupNames = new Set(Object.keys(rt.cfg.model_groups ?? {}));
+  const branch = ctx.sessionManager?.getBranch?.() ?? [];
+  const target = groupToRestore(branch, ctx.model, groupNames);
+  if (!target) return;
+  const model = ctx.modelRegistry.find(target.provider, target.modelId);
+  if (!model) return;
+  const ref = `${target.provider}/${target.modelId}`;
+  // ctx.model is a live getter: capture what Pi restored before the switch.
+  const restored = ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : '(none)';
+  // Pi's setModel takes the thinking level from the settings; Pi's resume
+  // takes it from the branch. Put the branch's level back after the switch.
+  const level = branchThinkingLevel(branch);
+  // The switch emits model_select (source "set"): not a user pick.
+  pendingRestore.ref = ref;
+  try {
+    const ok = await rt.pi.setModel(model);
+    if (!ok) {
+      warnLog(`[router] resumed session: could not select ${ref} again`);
+      return;
+    }
+    if (level && rt.pi.getThinkingLevel() !== level) {
+      rt.pi.setThinkingLevel(level as Parameters<typeof rt.pi.setThinkingLevel>[0]);
+    }
+    routerLog(`[router] resumed session: selected ${ref} again (Pi restored ${restored})`);
+  } catch (err: unknown) {
+    warnLog(
+      `[router] resumed session: selecting ${ref} failed: ${err instanceof Error ? err.message : textOf(err)}`
+    );
+  } finally {
+    pendingRestore.ref = null;
+  }
+}
+
 export function createEventHandlers(rt: EventHandlerDeps): void {
+  // The group a session_start restore is selecting right now (its
+  // model_select is the router's own switch, not a user pick).
+  const pendingRestore: { ref: string | null } = { ref: null };
   rt.pi.on(
     'session_start',
     inSessionOf((ev, ctx) => {
@@ -204,6 +258,9 @@ export function createEventHandlers(rt: EventHandlerDeps): void {
       rt.escalation.reset();
 
       rt.registerGroupModels(ctx);
+      // Returned below: Pi awaits session_start, so a prompt sent right after
+      // the start already reaches the restored group.
+      const restoring = restoreGroupSelection(rt, ctx, pendingRestore);
       // scan() swallows per-provider failures by design, but a top-level
       // throw (e.g. from checkScanSanity or saveCache) must not disappear
       // silently (final v1.6.0 review minor #6).
@@ -328,6 +385,7 @@ export function createEventHandlers(rt: EventHandlerDeps): void {
           return lines;
         }
       });
+      return restoring;
     })
   );
 
@@ -341,7 +399,8 @@ export function createEventHandlers(rt: EventHandlerDeps): void {
   rt.pi.on(
     'model_select',
     inSessionOf((ev, ctx) => {
-      if (ev.source !== 'restore') {
+      const ownRestore = pendingRestore.ref === `${ev.model.provider}/${ev.model.id}`;
+      if (ev.source !== 'restore' && !ownRestore) {
         rt.activeGroup = null;
         // /model path: the user picked a model for this turn — that IS the turn's outcome.
         emitOutcome({

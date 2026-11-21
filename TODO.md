@@ -599,6 +599,19 @@ Pick up in a later round, each as its own plan where noted (§11):
   tooling fix). Laya nonetheless stays ACTIVE in the owner's live setup
   (owner 2026-11-12: it works well for him; `continue` answering less often
   may be the better read).
+- **Re-evaluate Pi virtual models** (owner 2026-11-21). The plan's trigger
+  (`docs/plans/2026-11-04-virtual-models-routing.md`) was not run in the
+  1.6.0 alignment round; run 2026-11-21: the retry matrix on Pi 1.6.0 equals
+  the 1.5.0 baseline in all seven rows (no stall detection, empty responses
+  still not retried, no extension say in retries, budget still four requests),
+  so the retry-based trigger does not fire. New fit arguments the trigger does
+  not ask about: Pi restores a virtual model's selection on resume (the
+  `--continue` defect, fixed in the current design by
+  `docs/plans/2026-11-21-continue-restores-group.md`), `responseModel`
+  metadata (1.5.0), and whether Pi's cache warmer handles a virtual model
+  (unchecked). Needs its own plan (§11) with the shadow route
+  (`scripts/virtual-route-shadow.ts`) re-run on current logs; open decision
+  for the owner: widen the trigger beyond retry behavior.
 - **Felt quality vs. benchmark ranking** (2026-10-31 observation): needs its
   own plan — how owner ratings per model and task type enter the ranking
   (user layer, allowed per ADR-0025 §2C) without model names in shipped code.

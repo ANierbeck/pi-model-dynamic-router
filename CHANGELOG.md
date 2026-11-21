@@ -59,6 +59,24 @@ without the owner's explicit release approval).
 
 ### Fixed
 
+- **`pi --continue` left the router group.** After a restart with
+  `--continue` (or `/resume`, `/fork`) a router session ran on the concrete
+  model the router had chosen last, and no request was routed any more. Pi
+  restores a session's model from the branch and lets a `model_change` outlive
+  later replies only for Pi virtual models; router group models are ordinary
+  providers and every reply names the physical model. At `session_start` the
+  router now selects the group again when the branch's latest `model_change`
+  names a group and Pi fell back to the last responder (plan
+  `docs/plans/2026-11-21-continue-restores-group.md`). A deliberate `/model`
+  switch is kept; headless sessions (print mode, pi-subagents children, which
+  receive a fork of the parent's branch) are left alone. The session's
+  thinking level survives the switch, a last reply that was aborted or failed
+  still counts as Pi's fallback, and the switch is not logged as a user model
+  pick. Red-first: `test/continue-restores-group.test.ts` (the wiring and the
+  headless-child cases failed against the old handler; the abort, thinking
+  level, outcome-record, await and log cases against the first version).
+  The static guard `test/no-router-setmodel-static.test.ts` now allows exactly
+  this second `setModel` call site next to `set_model_from_group`.
 - **Footer hid other extensions' status texts.** The router's footer replaces
   pi's built-in footer, which was the only renderer of `ctx.ui.setStatus()`
   texts, so statuses from other extensions (for example pi-memory, pi-subagents)
