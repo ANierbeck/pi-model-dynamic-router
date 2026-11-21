@@ -33,6 +33,51 @@ createServer((req, res) => {
     log({ model, path: req.url });
     const mode = model.slice(-1);
 
+    // Tool-call mode (router-shape probe): a last user message containing
+    // `CALL:<tool>:<json args>` is answered with that tool call; everything
+    // after the tool result falls through to the ok answer below.
+    let parsed = {};
+    try {
+      parsed = JSON.parse(body);
+    } catch {
+      /* ignore */
+    }
+    const msgs = Array.isArray(parsed.messages) ? parsed.messages : [];
+    const last = msgs[msgs.length - 1];
+    const lastText =
+      typeof last?.content === 'string'
+        ? last.content
+        : Array.isArray(last?.content)
+          ? last.content.map((c) => c?.text ?? '').join('')
+          : '';
+    // Only requests that offer tools (not compaction summaries, whose transcript
+    // can contain the marker).
+    const offersTools = Array.isArray(parsed.tools) && parsed.tools.length > 0;
+    const call = offersTools && last?.role === 'user' ? /CALL:(\w+):(\{[^}]*\})/.exec(lastText) : null;
+    if (call) {
+      const toolChunk = (delta, finish) =>
+        `data: ${JSON.stringify({
+          id: 'x',
+          object: 'chat.completion.chunk',
+          model,
+          choices: [{ index: 0, delta, finish_reason: finish }],
+        })}\n\n`;
+      sse(res, [
+        toolChunk(
+          {
+            role: 'assistant',
+            tool_calls: [
+              { index: 0, id: 'call_1', type: 'function', function: { name: call[1], arguments: call[2] } },
+            ],
+          },
+          null
+        ),
+        toolChunk({}, 'tool_calls'),
+        'data: [DONE]\n\n',
+      ]);
+      return;
+    }
+
     if (mode === 'a') {
       res.writeHead(429, { 'content-type': 'application/json' });
       res.end(JSON.stringify({ error: { message: 'rate limit exceeded', type: 'rate_limit_error' } }));
