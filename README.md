@@ -33,8 +33,10 @@ ln -s ~/pi-model-dynamic-router ~/.pi/agent/extensions/pi-model-dynamic-router
    (see [Adding a Provider](#adding-a-provider)).
 2. Run `/reload` in pi — the router discovers models, prices, and quality
    scores automatically.
-3. Switch your session to a group: `simple`, `standard`, `code_complex`,
-   `design`, `planning`, or `dynamic` (content-classified per prompt).
+3. Select `router/dynamic` ("Router (dynamic)") with `/model` — the router
+   classifies every prompt and serves it from the matching group (`simple`,
+   `standard`, `code_complex`, `design`, `planning`). To stay on one group,
+   pin it with the `set_model_from_group` tool.
 
 The shipped defaults need no configuration. To personalize, see
 [Personalized configuration](#personalized-configuration) below — or jump
@@ -293,7 +295,7 @@ When a model fails (API error, rate limit, empty response, or usage limit exceed
    (the global order; every shipped group also carries its own `fallback_groups` chain, which wins over it)
 3. **Continues until a working model is found**
 
-**Example:** You select `dynamic` group, but the first model hits a rate limit → router automatically tries the next `dynamic` model → if all fail, tries the group's fallback chain (e.g. `standard` → `simple`).
+**Example:** A request is classified into a group, but the first model hits a rate limit → router automatically tries the next `dynamic` model → if all fail, tries the group's fallback chain (e.g. `standard` → `simple`).
 
 #### Configuration
 
@@ -409,13 +411,26 @@ All scanning is async and non-blocking.
 
 ### Group Selection
 
-**Resumed sessions keep their group.** After `pi --continue`, `/resume` or
-`/fork`, Pi would restore the concrete model that answered last (it only keeps
-a selection of its own *virtual* models across later replies). When the branch
-selected a router group and no other model was chosen since, the router selects
-that group again at session start. A deliberate `/model` switch to a concrete
-model is kept. Not restored: print mode (`pi -p --continue`), and an explicit
-`--model` that names exactly the model that answered last.
+**One selectable model: `router/dynamic`.** The router registers a single Pi
+virtual model, `router/dynamic`. Each request it routes goes to a group's
+hidden model (`<group>/<group>`), which walks that group's candidates. The
+group models are not listed in `/model` or in scoped models
+(`enabledModels`). Because the selection is a virtual model, Pi keeps it
+across replies, `--continue`, `/resume`, `/fork` and `/tree`.
+
+**Pinning a group.** `set_model_from_group` with a group name pins that group
+for the session: `router/dynamic` serves every request from it, and the
+session's model stays `router/dynamic`. `none` (or `dynamic`) releases the
+pin. The pin, the previous turn's category, the tool follow-up run and the
+group that last served are stored on the session branch, so a fork or `/tree`
+jump sees its own values and a restart keeps them. The group that last served
+also selects the per-group `context_budget`.
+
+**Older sessions and `--model`.** `--model <group>/<group>` and a settings
+default naming a group still resolve. An interactive session on a group model
+moves to `router/dynamic` at start, with that group pinned (`dynamic/dynamic`
+moves unpinned). So does a pre-2.0.0 session whose branch selected a group.
+Headless sessions (print mode, pi-subagents children) keep the group model.
 
 Each group auto-discovers available models, filters by quality, and selects
 by billing preference. The shipped groups (see `router-config.json`):
@@ -554,7 +569,7 @@ When a streaming response fails mid-stream (empty body, connection drop, timeout
 
 ### Delegating subtasks to cheap groups (Pi subagents)
 
-The router only resolves a group name to the best available model *for a single completion request* — it has no concept of "split this task into subtasks and run the cheap ones on a cheap model." That kind of decomposition belongs one layer up, in [Pi's subagent system](https://github.com/earendil-works/pi-subagents), which can already address any configured group directly by model ref: every group is registered as its own provider, so `<group>/<group>` (e.g. `simple/simple`, `standard/standard`, `planning/planning`) is a valid `model` value for `subagent(...)` calls, exactly like any other provider/model pair Pi knows about.
+The router only resolves a group name to the best available model *for a single completion request* — it has no concept of "split this task into subtasks and run the cheap ones on a cheap model." That kind of decomposition belongs one layer up, in [Pi's subagent system](https://github.com/earendil-works/pi-subagents), which can already address any configured group directly by model ref: every group is registered as its own provider, so `<group>/<group>` (e.g. `simple/simple`, `standard/standard`, `planning/planning`) is a valid `model` value for `subagent(...)` calls. The group models are hidden from `/model`, but Pi still resolves them by ref, and a headless subagent child stays on the group it was given.
 
 This lets you fan out I/O-heavy work (reading/summarizing several files) to a cheap group in parallel, then run one expensive-group call over the collected results — without any router code changes:
 
@@ -904,7 +919,7 @@ watchdog wedge events and classifier health.
 
 | Tool | Purpose |
 |------|---------|
-| `set_model_from_group` | Switch session to best model from a group |
+| `set_model_from_group` | Pin a group for the session (`router/dynamic` only); `none` releases the pin |
 | `resolve_model_group` | Preview what a group would resolve to |
 | `update_model_metrics` | Manual metric override |
 | `bulk_read` | Answer a question about files via a cheap reader model, without loading their content into the session context |
@@ -977,7 +992,8 @@ reload-time swaps are always seen — never stale closure captures:
 
 The final `session_shutdown` handler and process-exit/signal cleanup stay at the
 bottom of index.ts (handler order is load-bearing). The router never calls
-`pi.setModel()` except in the `set_model_from_group` tool.
+`pi.setModel()` except once at `session_start`, to move a session on a group
+model to `router/dynamic` (`test/no-router-setmodel-static.test.ts`).
 
 This modular design enables better maintainability, testing, and extensibility.
 

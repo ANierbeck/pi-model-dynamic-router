@@ -5,8 +5,9 @@ every item, two conditions (`docs/research/2026-11-21-router-shape-spike.md`).
 The owner then decided to migrate for 2.0.0 with the virtual layer as the only
 path (open decisions 1, 2 and 4 below). Steps 2, 3 and 5 are built before
 2.0.0; step 4 (the owner's live phase) is the gate for proposing the release.
-Steps 2 and 3 built on `feat/virtual-selection` (2026-11-21), not yet merged
-(review rounds 1–2 clean; step 3 in review).
+Steps 2, 3 and 5 built on `feat/virtual-selection` (2026-11-21), not yet
+merged (review rounds 1–2 clean; steps 3 and 5 in review). Step 4 (owner live
+phase) is open.
 
 **Verified against:** `main` @ `36ddef3`; pi-coding-agent 1.6.0:
 `docs/virtual-models.md`; `dist/core/virtual-models.js` L29–42
@@ -209,7 +210,7 @@ hides the groups from `/model` and turns `set_model_from_group` into a pin
    branch; the decision log and `/router status` are compared against the
    last weeks on the group layer (served models, failovers, cost). No default
    flip: there is no switch.
-5. **Remove the workarounds (2.0.0, same release):** the duplicated
+5. **Remove the workarounds (2.0.0, same release)** — **done 2026-11-21.** The duplicated
    `activeGroup`/`curModel` pairs, the sub-call scope where `direct` covers
    it. Also decide the branch `group` field's writer (review step-3 round 1,
    Important 1, owner decision 2026-11-21: deferred here): either a served
@@ -220,6 +221,16 @@ hides the groups from `/model` and turns `set_model_from_group` into a pin
    (group models gone from `/model`, `--model` and `enabledModels`;
    `set_model_from_group` pins instead of switching) go into the CHANGELOG
    and README.
+   - Group writer decided (owner, 2026-11-21): the served request writes it
+     (`recordServedRef`); the per-group budget follows the group that last
+     served. Unchanged state writes append no entry.
+   - `activeGroup` pair removed (the Router's copy and its `detectGroup`
+     short-circuit). The `curModel` fields stay apart: the extension's is the
+     selection Pi shows, the Router's the ref that served (timestamped),
+     `lastDynamicModel` the selected-or-served ref; they hold different values.
+   - Sub-call scope stays: both callers (read delegation, `bulk_read`) stream
+     on the delegation group model directly, so `route()` and `direct` never
+     see them.
 
 ## Open decisions
 
