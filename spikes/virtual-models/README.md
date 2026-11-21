@@ -14,6 +14,7 @@ model is served by a local fake provider on `127.0.0.1`.
 | `state-probe.ts` | `state` for direct requests, fork, resume, independent sessions | §5 (a) |
 | `two-layer-probe.ts` | virtual model → group-like extension provider → physical model: attribution, `previous` | §5 (b) |
 | `session-id-probe.ts` | session id in `route()` and in a provider's `streamSimple` | §6 |
+| `router-shape-probe.ts` + `router-shape-run.ts` | the planned two-layer design (`router/dynamic` → hidden `rgrp/*` → physical): 42 SDK checks | `docs/research/2026-11-21-router-shape-spike.md` |
 
 ## Re-run
 

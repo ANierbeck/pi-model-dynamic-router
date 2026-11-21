@@ -1,8 +1,10 @@
 # Router groups become Pi virtual models (two-layer migration)
 
-**Status:** proposed — 2026-11-21, written on the owner's request ("create a
-plan for the switch to Pi's virtual models"). Not approved; nothing is built.
-Open decision 3 decided by the owner 2026-11-21: one virtual model.
+**Status:** approved, in progress — 2026-11-21. Step 1 (spike) done: go on
+every item, two conditions (`docs/research/2026-11-21-router-shape-spike.md`).
+The owner then decided to migrate for 2.0.0 with the virtual layer as the only
+path (open decisions 1, 2 and 4 below). Steps 2, 3 and 5 are built before
+2.0.0; step 4 (the owner's live phase) is the gate for proposing the release.
 
 **Verified against:** `main` @ `36ddef3`; pi-coding-agent 1.6.0:
 `docs/virtual-models.md`; `dist/core/virtual-models.js` L29–42
@@ -28,8 +30,12 @@ pi-coding-agent `dist/core/model-registry.js` L21–25 (`ctx.modelRegistry`:
 `getAvailable`) and L366 (`hasConfiguredAuth` reads configured providers, not
 models), `dist/core/extensions/loader.js` L373–381 (`pi.registerProvider`
 also accepts a native pi-ai `Provider` object). The retry matrix on Pi
-1.6.0 (2026-11-21, `spikes/virtual-models/README.md`). **Not checked:**
-everything listed under step 1.
+1.6.0 (2026-11-21, `spikes/virtual-models/README.md`). Step 1's items:
+`docs/research/2026-11-21-router-shape-spike.md` (42 checks on Pi 1.6.0,
+2026-11-21). The group registration claims (one provider per group,
+re-registration at `session_start` and on every cache-economics update):
+`src/group-registration.ts` L160–206, `src/event-handlers.ts` L260, at `main`
+`9fc43e5`.
 
 **Related:** `docs/plans/2026-11-04-virtual-models-routing.md` (the spike and
 the 2026-11-07 decision to stay; its evidence is the basis of this plan and is
@@ -138,54 +144,66 @@ users before step 4.
    - Re-run `scripts/virtual-route-shadow.ts` on current logs (the 93-turn
      figure is from 2026-10-28 → 2026-11-06).
    Exit: a written go/no-go per item; any no-go stops the plan before step 2.
-2. **Virtual layer behind a switch.** Register the one virtual model
-   `router/dynamic` (open decision 3) at extension load (same place as
-   `registerGroupProviders()`). `route()` resolves the group (a pinned group
-   from the branch state first, then classification and `HINT:` for `user`,
-   the remembered run group for `continuation`, the failed request's group
-   for `retry`, a fixed group for `direct`) and returns that group's provider
-   model. `set_model_from_group` (`src/tools.ts`) today switches the session
-   to a concrete model of the group with `pi.setModel`, which under the
-   virtual selection would leave routing altogether; it becomes a group pin
-   in the branch state instead (the selection stays `router/dynamic`), with
-   a way to release the pin. The decision reaches `groupStream`
-   through a one-request handoff keyed by session id (the spike's finding:
-   `streamSimple` has no context). Off by default; the config key is an open
-   decision.
-3. **Turn state into `route()` state.** Move run group/driver and the
-   inherited category into the branch state for virtual selections; the
-   in-memory `TurnState` keeps only what is per request (stream time, turn
-   sequence). Pins: a fork and a `/tree` jump see their own branch's
-   category; a restart keeps it.
-4. **Owner live phase, then default flip.** The owner runs on the virtual
-   layer; the decision log and `/router status` compare against the group
-   layer (served models, failovers, cost). Criteria are fixed before the
-   phase starts (open decision). Then the default flips.
-5. **Remove the workarounds** after one release on the new default:
-   `src/session-restore.ts` and its `setModel` call site (the static guard
-   goes back to one call site), the duplicated `activeGroup`/`curModel`
-   pairs, the sub-call scope where `direct` covers it. Old sessions whose
-   last `model_change` names `dynamic/dynamic` keep the restore until then.
+   **Done 2026-11-21:** go on every item; conditions below in steps 2 and 3.
+2. **Selection layer (2.0.0).** Register the one virtual model
+   `router/dynamic` at extension load. Its `route()` returns a hidden group
+   model and nothing else: the pinned group from the branch state if there is
+   one, otherwise `dynamic/dynamic`, whose `groupStream` classifies exactly
+   as today. Every reason (`user`, `continuation`, `retry`, `direct`) takes
+   the same path, so compaction summaries behave as they do today on
+   `dynamic/dynamic` (open decision 3's `direct` group: unchanged).
+   - The group providers become native pi-ai `Provider`s with
+     `filterModels: () => []`. **Spike condition (G1b):** a re-registration
+     shows the group models in the availability snapshot until the queued
+     refresh lands (under 500 ms). Today the router re-registers at
+     `session_start` and whenever a group's cache economics change, so the
+     provider's `getModels()` returns the current economics live instead, and
+     the provider is registered once and again only when the group set
+     changes.
+   - `set_model_from_group` (`src/tools.ts`) becomes a pin in the branch state
+     instead of `pi.setModel`; `none` releases it. The spike's pattern: the
+     tool records the pin per session, the next `route()` call (the tool
+     follow-up, `continuation`) applies and stores it.
+   - **Spike condition (F7): old sessions.** At `session_start`, a branch whose
+     selection names a router group moves to `router/dynamic`; a group other
+     than `dynamic` becomes the pin. This replaces `src/session-restore.ts`.
+   - `route()` maps a `failed` physical model back to the group through the
+     state's run group, never through `failed.model.provider` (spike D3).
+   - The router's own `getAvailable()` readers (`src/routing.ts`,
+     `src/scan-runner.ts`, `src/dynamic-config-runner.ts`,
+     `src/commands.ts`) are checked against hidden groups.
+   - The footer and `/router status` show the served group and model, not
+     `ctx.model` (which stays `router/dynamic`).
+3. **Turn state into `route()` state (2.0.0).** Move the pin, run group and
+   inherited category into the branch state; the in-memory `TurnState` keeps
+   only what is per request (stream time, turn sequence). Then a fork and a
+   `/tree` jump see their own branch's category, and a restart keeps it.
+4. **Owner live phase (gate for proposing 2.0.0).** The owner works on the
+   branch; the decision log and `/router status` are compared against the
+   last weeks on the group layer (served models, failovers, cost). No default
+   flip: there is no switch.
+5. **Remove the workarounds (2.0.0, same release):** `src/session-restore.ts`
+   and its `setModel` call site (the static guard goes back to one call
+   site, then to the migration's), the duplicated `activeGroup`/`curModel`
+   pairs, the sub-call scope where `direct` covers it. The breaking changes
+   (group models gone from `/model`, `--model` and `enabledModels`;
+   `set_model_from_group` pins instead of switching) go into the CHANGELOG
+   and README.
 
 ## Open decisions
 
-1. **Reopen the 2026-11-07 decision at all.** That decision was "stay"; the
-   gains then were not reported bugs. New since: the `--continue` defect
-   (fixed by a workaround with two gaps), and the owner's request to switch.
-   Recommendation: approve step 1 only; decide on steps 2–5 with its results.
-2. **Timing relative to 2.0.0.** Recommendation: after 2.0.0. Pi introduced
-   virtual models as experimental (CHANGELOG 0.99.0) and no later entry says
-   otherwise (the 1.6.0 docs and type comments no longer use the word), and
-   the release has a critical path of its own already.
-3. **Naming and what stays visible — decided by the owner 2026-11-21: one
-   virtual model**, `router/dynamic`. The group providers are hidden (see
-   "Hiding the dispatch layer"; the earlier claim of this plan that Pi cannot
-   hide them was wrong). The category groups are reached only through
-   classification, `HINT:` and `set_model_from_group` (which becomes a pin,
-   step 2). Still open within it: the exact provider id, and the fixed group
-   for `direct` requests (compaction summaries).
-4. **The switch and its default** in step 2 (user config key, or a
-   `/router` command), and the criteria for the default flip in step 4.
+1. ~~Reopen the 2026-11-07 decision at all.~~ **Decided 2026-11-21 (owner):**
+   yes; step 1 was approved and is done.
+2. ~~Timing relative to 2.0.0.~~ **Decided 2026-11-21 (owner):** in 2.0.0.
+3. ~~Naming and what stays visible.~~ **Decided 2026-11-21 (owner):** one
+   virtual model, `router/dynamic` (the owner chose it over taking over the
+   ref `dynamic/dynamic`); the group providers are hidden. The `direct` group:
+   unchanged behavior, `route()` returns `dynamic/dynamic` (step 2).
+4. ~~The switch and its default.~~ **Decided 2026-11-21 (owner):** no switch;
+   the virtual layer is the only path in 2.0.0, old sessions are migrated at
+   `session_start`, the workarounds go in the same release.
 5. **Widen the re-evaluation trigger** of the 2026-11-04 plan beyond retry
    behavior, and add the retry matrix to the host alignment checklist in
-   AGENTS §10 (it was skipped in the 1.6.0 round).
+   AGENTS §10 (it was skipped in the 1.6.0 round). Still open; with the
+   migration done the trigger turns into "re-run the router-shape spike on
+   every host upgrade", which is the recommendation.
