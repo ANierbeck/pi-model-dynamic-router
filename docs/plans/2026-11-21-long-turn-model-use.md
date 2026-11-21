@@ -1,7 +1,7 @@
 # Model use in long agentic turns
 
-**Status:** proposed — 2026-11-21. Phase 0 (measurement) is the only step
-that may start now. Phases 1 and 2 wait for its result and the owner's go.
+**Status:** in progress — 2026-11-21. Owner decision: do all phases.
+Phase 0 done (`docs/research/2026-11-21-long-turn-profile.md`).
 
 **Verified against:** `origin/main` @ `03274c1`: `src/delegation.ts`
 (`DEFAULTS`, `handleReadDelegation`), `src/bulk-read.ts` (the block message at
@@ -32,7 +32,7 @@ the expensive groups (`router-config.json:150–156`).
 
 ## Solution (phased)
 
-- **Phase 0 — measure (may start now).** For each turn in the decision log:
+- [x] **Phase 0 — measure (done 2026-11-21).** For each turn in the decision log:
   steps, the share of steps whose tool calls are reads, searches or shell
   runs, cost share per model, cache-hit share. Use the turn join
   (`scripts/turn-decision-join.ts`, `docs/research/2026-10-27-turn-decision-join.md`).

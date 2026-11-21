@@ -1,6 +1,7 @@
 # `/router fresh` in a busy session
 
-**Status:** proposed — 2026-11-21. No code changed yet.
+**Status:** in progress — 2026-11-21. Owner decision on open decision 1: wait for the
+running turn in up to three waits, then interrupt it.
 
 **Verified against:** `origin/main` @ `03274c1`; Pi pi-coding-agent 1.6.0
 (`dist/core/agent-session.js`). The router lines were read on
