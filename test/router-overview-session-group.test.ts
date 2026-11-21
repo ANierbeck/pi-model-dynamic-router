@@ -33,7 +33,7 @@ async function overviewHeaders(
     },
     load: () => {},
     sessionCtx: undefined,
-    router: { setSessionCtx: () => {} },
+    router: { setSessionCtx: () => {}, getCurModel: () => '' },
     cfg: { model_groups: GROUPS },
     cache: {},
     served,
@@ -85,5 +85,75 @@ describe('/router overview marks the session’s group', () => {
     expect(
       marked(await overviewHeaders({ provider: 'paid-cloud-provider', id: 'paid-model' }))
     ).toEqual([]);
+  });
+});
+
+// Step 5 review (Boyscout): the `current` row mark compared each ref with
+// curModel, which is the SELECTION (`router/dynamic`, a group model) in every
+// router session, so no row was ever marked current there. In a router
+// session the current model is the one that served (the Router's served ref);
+// on a concrete model it stays the selection.
+async function overviewRows(
+  model: { provider: string; id: string },
+  served: string,
+  selection: string
+): Promise<string[]> {
+  let handler: Handler | undefined;
+  const rt = {
+    pi: {
+      registerCommand: (name: string, d: { handler: Handler }) => {
+        if (name === 'router') handler = d.handler;
+      },
+    },
+    load: () => {},
+    sessionCtx: undefined,
+    router: { setSessionCtx: () => {}, getCurModel: () => served },
+    cfg: { model_groups: { planning: { method: 'best' } } },
+    cache: {},
+    served: createServedGroups(),
+    pins: createPinHandoff(),
+    curModel: selection,
+    resolve: () => null,
+    rateLimitManager: { getLimits: () => new Map() },
+    isLimited: () => false,
+    getTopModels: () => ({
+      models: [
+        { ref: 'prov/a', limited: false, rank: 0 },
+        { ref: 'prov/b', limited: false, rank: 1 },
+      ],
+      total: 2,
+    }),
+    getM: () => ({ avg_latency_ms: 0, tps: 0, samples: 0 }),
+    getUsage: () => 0,
+    limitSecs: () => 0,
+    costMux: () => 1,
+    lookupPrice: () => null,
+    effCost: () => 'unknown',
+    allDiscoveredRefs: () => ['prov/a', 'prov/b'],
+  };
+  createCommands(rt as never);
+  const notes: string[] = [];
+  await handler!('', {
+    model,
+    sessionManager: { getSessionId: () => 'S' },
+    ui: { notify: (m: string) => notes.push(m) },
+  });
+  return notes
+    .join('\n')
+    .split('\n')
+    .filter((l) => l.includes('current'));
+}
+
+describe('/router overview marks the current model', () => {
+  it('on router/dynamic: the model that served', async () => {
+    const rows = await overviewRows(VIRTUAL, 'prov/b', 'router/dynamic');
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toContain('prov/b');
+  });
+
+  it('on a concrete model: the selection, not a stale served ref', async () => {
+    const rows = await overviewRows({ provider: 'prov', id: 'a' }, 'prov/b', 'prov/a');
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toContain('prov/a');
   });
 });

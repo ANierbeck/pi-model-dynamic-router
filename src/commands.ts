@@ -1750,6 +1750,11 @@ export function createCommands(rt: CommandDeps): void {
             pins: rt.pins,
             branch: ctx.sessionManager?.getBranch?.() ?? [],
           });
+          // The model the session is using: in a router session (router/dynamic,
+          // a group model) curModel is the SELECTION, so the served ref decides;
+          // on a concrete model the Router's served ref may be stale.
+          const currentRef =
+            sessionGroup !== null ? rt.router.getCurModel() || rt.curModel : rt.curModel;
           // Group tables with top 5 models (3 available + up to 2 limited)
           for (const [groupName, g] of Object.entries(rt.cfg.model_groups)) {
             const n = 5;
@@ -1853,7 +1858,7 @@ export function createCommands(rt: CommandDeps): void {
                   limited,
                   limitSecs: limited ? rt.limitSecs(ref) : 0,
                   costMux: rt.costMux(prov),
-                  current: rt.curModel === ref,
+                  current: currentRef === ref,
                   ...(why ? { why } : {}),
                 };
               });
