@@ -703,7 +703,11 @@ export class StreamOrchestrator {
         const turnId = this.ctx.turnId?.() ?? null;
         classifyOpts.turn = turnId;
         const prevGroupAtTurnStart = this.ctx.activeGroup ?? null;
-        const prevTurnSeq = Number(turnId?.split('#')[1] ?? 0);
+        // The turn a group HINT corrects is the PREVIOUS one (ADR-0027 Phase 2,
+        // DecisionCorrectionRecord.prevTurn). Turn numbers restart per process,
+        // so on turn #1 there is no previous turn to join against, even when
+        // the branch carries a served group from an earlier process.
+        const prevTurnSeq = Number(turnId?.split('#')[1] ?? 0) - 1;
         const classification = await this.ctx.classifyPrompt(prompt ?? '', classifyOpts);
         // A user pin decides the model, not the category: the turn's content
         // still has one, and that is what the next unpinned turn inherits.
