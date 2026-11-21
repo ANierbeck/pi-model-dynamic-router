@@ -2,7 +2,11 @@
 // group, the session's group and the inherited category move into the branch
 // state (pi.virtual-model-state), so a fork and a /tree jump see their own
 // branch's values and a restart keeps them. Red-first per AGENTS.md §4.
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
+import { setLogLevel, setProjectLogDir } from '../src/logger.ts';
 
 import {
   createSelectionStateSource,
@@ -118,5 +122,67 @@ describe('selection state source (step 3)', () => {
     const src = makeSource(null);
     expect(src.read()).toBeUndefined();
     expect(() => src.write({ runGroup: 'planning' })).not.toThrow();
+  });
+
+  it('an unknown stored lastCategory reads back undefined (untrusted JSON)', () => {
+    // A hand-edited session file or a future router version may write a value
+    // outside the taxonomy; the read seam filters it like the other garbage.
+    const mgr = fakeManager([stateData({ pin: null, lastCategory: 'garbage' } as SelectionState)]);
+    expect(makeSource(mgr).read()?.lastCategory).toBeUndefined();
+  });
+
+  it('a valid stored lastCategory reads back as-is', () => {
+    const mgr = fakeManager([stateData({ pin: null, lastCategory: 'planning' } as SelectionState)]);
+    expect(makeSource(mgr).read()?.lastCategory).toBe('planning');
+  });
+});
+
+describe('persistence failures (review step-3 round 1, Important 2)', () => {
+  afterEach(() => {
+    setProjectLogDir(undefined);
+    setLogLevel('info');
+  });
+
+  it('a throwing appendState is logged, not silently dropped — write still does not throw', () => {
+    const logDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sel-persist-'));
+    fs.rmSync(path.join(os.homedir(), '.pi', 'logs'), { recursive: true, force: true });
+    try {
+      setLogLevel('debug');
+      setProjectLogDir(logDir);
+      const src = createSelectionStateSource({
+        branch: () => [],
+        leafId: () => undefined,
+        appendState: () => {
+          throw new Error('disk full');
+        },
+      });
+      expect(() => src.write({ lastCategory: 'planning' })).not.toThrow();
+      const log = path.join(logDir, '.pi', 'logs', 'router.log');
+      const content = fs.readFileSync(log, 'utf-8');
+      expect(content).toContain('[selection] branch state not persisted');
+      expect(content).toContain('disk full');
+    } finally {
+      fs.rmSync(logDir, { recursive: true, force: true });
+    }
+  });
+
+  it('the deliberate skip (io handles no-manager itself) is not reported as a failure', () => {
+    const logDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sel-quiet-'));
+    fs.rmSync(path.join(os.homedir(), '.pi', 'logs'), { recursive: true, force: true });
+    try {
+      setLogLevel('debug');
+      setProjectLogDir(logDir);
+      const src = createSelectionStateSource({
+        branch: () => [],
+        leafId: () => undefined,
+        appendState: () => {
+          /* io resolved no manager: a quiet no-op by contract */
+        },
+      });
+      src.write({ lastCategory: 'planning' });
+      expect(fs.existsSync(path.join(logDir, '.pi', 'logs', 'router.log'))).toBe(false);
+    } finally {
+      fs.rmSync(logDir, { recursive: true, force: true });
+    }
   });
 });

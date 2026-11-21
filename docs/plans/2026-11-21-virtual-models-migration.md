@@ -200,8 +200,9 @@ hides the groups from `/model` and turns `set_model_from_group` into a pin
    in-memory `TurnState` fields (now gone); `decideSelection` reads the branch so
    the pin and served group survive restart, fork and `/tree`. Legacy sessions
    restore into the same store. Red-first: `test/selection-branch-store.test.ts`
-   (8 tests red on the absent store), branch-read pins in
-   `test/virtual-selection.test.ts` (+13), per-session inheritance/end-isolation in
+   (5 tests red on the absent store — the final file consolidates them),
+   branch-read pins in `test/virtual-selection.test.ts` (+9 in the step-3
+   describe), per-session inheritance/end-isolation in
    `test/session-keyed-turn-state.test.ts` (rewritten: the persisted category
    replaces the shutdown-amnesia contract).
 4. **Owner live phase (gate for proposing 2.0.0).** The owner works on the
@@ -210,7 +211,10 @@ hides the groups from `/model` and turns `set_model_from_group` into a pin
    flip: there is no switch.
 5. **Remove the workarounds (2.0.0, same release):** the duplicated
    `activeGroup`/`curModel` pairs, the sub-call scope where `direct` covers
-   it. (`src/session-restore.ts` and its `setModel` call site already went
+   it. Also decide the branch `group` field's writer (review step-3 round 1,
+   Important 1, owner decision 2026-11-21: deferred here): either a served
+   request writes it (per-group compaction budget applies after a restart) or
+   the field goes with the duplicated pairs. (`src/session-restore.ts` and its `setModel` call site already went
    in step 2; the one call site left is the migration's in
    `src/event-handlers.ts`, pinned by `test/no-router-setmodel-static.test.ts`.) The breaking changes
    (group models gone from `/model`, `--model` and `enabledModels`;

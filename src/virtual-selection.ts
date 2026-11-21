@@ -9,6 +9,10 @@
  * Pure decisions only; src/virtual-model.ts wires them to Pi.
  */
 
+import { VALID_CATEGORIES } from './classification-prompt.ts';
+import { debugLog } from './logger.ts';
+import { textOf } from './utils.ts';
+
 /** Provider id of the virtual model (owner decision 2026-11-21). */
 export const VIRTUAL_PROVIDER = 'router';
 /** Model id of the virtual model. */
@@ -23,24 +27,35 @@ export const STATE_ENTRY = 'pi.virtual-model-state';
 /**
  * Router state on the session branch (Pi's `pi.virtual-model-state`). Step 3
  * of the migration plan stores more than the pin here, so a fork and a /tree
- * jump see their own branch's values and a restart keeps them:
- * `group` is the group the session last routed through (compaction budget),
- * `runGroup` the current tool follow-up run's group, `lastCategory` the
- * previous turn's classified category (inherited by terse follow-ups).
+ * jump see their own branch's values and a restart keeps them. `runGroup` is
+ * the current tool follow-up run's group, `lastCategory` the previous turn's
+ * classified category (inherited by terse follow-ups).
+ *
+ * `group` has no production writer yet (review step-3 round 1, Important 1):
+ * the served group is recorded per session in `ServedGroups` (session-scoped),
+ * `model_select` only clears this field to null, and the compaction budget
+ * therefore still resolves from a null group — as it did before step 3. The
+ * field round-trips whatever older routers persisted; whether a serve should
+ * WRITE it is the step-5 consolidation's (or the owner's) decision.
  */
 export interface SelectionState {
   /** The pinned group, or null when the classifying group decides. */
   readonly pin: string | null;
+  /** Reserved; currently only written null (model_select) — see above. */
   readonly group?: string | null | undefined;
   readonly runGroup?: string | null | undefined;
   readonly lastCategory?: string | undefined;
 }
 
-function str(v: unknown): string | undefined {
-  return typeof v === 'string' ? v : undefined;
-}
 function strOrNull(v: unknown): string | null | undefined {
   return typeof v === 'string' ? v : v === null ? null : undefined;
+}
+// Hint categories are never persisted (a processed hint has no `category`
+// field), so the taxonomy list IS the complete set of valid stored values.
+function isKnownCategory(v: unknown): string | undefined {
+  return typeof v === 'string' && (VALID_CATEGORIES as readonly string[]).includes(v)
+    ? v
+    : undefined;
 }
 
 function storedStateEntry(branch: readonly unknown[]): Record<string, unknown> | undefined {
@@ -73,7 +88,10 @@ export function branchState(branch: readonly unknown[]): SelectionState | undefi
     pin,
     group: strOrNull(s.group),
     runGroup: strOrNull(s.runGroup),
-    lastCategory: str(s.lastCategory),
+    // The stored value is untrusted JSON: an entry outside the taxonomy
+    // (hand-edited file, future router) reads back undefined, exactly like
+    // the other garbage this scan skips (review step-3 round 1, Minor 1).
+    lastCategory: isKnownCategory(s.lastCategory),
   };
 }
 
@@ -140,8 +158,12 @@ export function createSelectionStateSource(io: {
     write(partial): void {
       try {
         io.appendState(foldSelectionState(this.read(), partial));
-      } catch {
-        // No manager in scope (plain process code): nothing to persist.
+      } catch (err) {
+        // The io seam no-ops quietly itself when no manager is in scope
+        // (plain process code); a THROW is a real persistence failure —
+        // logged, so step 3's "a restart keeps it" cannot fail silently
+        // (review step-3 round 1, Important 2).
+        debugLog(`[selection] branch state not persisted: ${textOf(err)}`);
       }
     },
   };
