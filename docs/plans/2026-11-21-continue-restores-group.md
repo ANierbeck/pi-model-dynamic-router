@@ -41,14 +41,18 @@ group back when Pi fell back to the last responder:
 1. On the current branch, the latest `model_change` names a router group model
    (`isVirtualGroupRef`).
 2. The session's current model is not a group model and equals the model of
-   the latest successful assistant message — exactly what `getBranchSelection`
-   falls back to.
+   the latest assistant message that names no Pi virtual model, whatever its
+   stop reason — exactly what `getBranchSelection` falls back to (the router
+   forwards a physical model's aborted or failed message unchanged).
 3. The session has a UI (`ctx.hasUI`: TUI or RPC). pi-subagents forks the
    parent's branch into child sessions and starts them headless with reason
    `startup`; a child given exactly the model that answered the parent last
    would otherwise look like Pi's fallback and lose its explicit model.
 4. Then the router calls `pi.setModel` with the registered group model (Pi
-   records a `model_change` for it).
+   records a `model_change` for it) and puts the branch's thinking level back
+   (Pi's `setModel` takes it from the settings, Pi's resume from the branch).
+   The handler returns the switch, so Pi awaits it before the first prompt;
+   the switch's own `model_select` is not logged as a user pick.
 
 A deliberate `/model` switch to a concrete model writes its own `model_change`
 (condition 1 fails) and is respected. `reload` and new sessions are no-ops
@@ -64,7 +68,8 @@ Second `pi.setModel()` caller: `src/tools.ts` documents
 2. Implement `src/session-restore.ts` and the wiring.
 3. Docs: README (session restore), CHANGELOG, architecture module map.
 4. Live check (owner): `pi --continue` on a router session shows the group in
-   the footer and routes the next request.
+   the footer and routes the next request; also after aborting the last reply
+   (Esc), and with the session's thinking level unchanged.
 
 ## Open decisions
 

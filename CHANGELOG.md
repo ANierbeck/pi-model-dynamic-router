@@ -69,9 +69,14 @@ without the owner's explicit release approval).
   names a group and Pi fell back to the last responder (plan
   `docs/plans/2026-11-21-continue-restores-group.md`). A deliberate `/model`
   switch is kept; headless sessions (print mode, pi-subagents children, which
-  receive a fork of the parent's branch) are left alone. Red-first:
-  `test/continue-restores-group.test.ts` (the wiring and the headless-child
-  cases failed against the old handler).
+  receive a fork of the parent's branch) are left alone. The session's
+  thinking level survives the switch, a last reply that was aborted or failed
+  still counts as Pi's fallback, and the switch is not logged as a user model
+  pick. Red-first: `test/continue-restores-group.test.ts` (the wiring and the
+  headless-child cases failed against the old handler; the abort, thinking
+  level, outcome-record, await and log cases against the first version).
+  The static guard `test/no-router-setmodel-static.test.ts` now allows exactly
+  this second `setModel` call site next to `set_model_from_group`.
 - **Footer hid other extensions' status texts.** The router's footer replaces
   pi's built-in footer, which was the only renderer of `ctx.ui.setStatus()`
   texts, so statuses from other extensions (for example pi-memory, pi-subagents)

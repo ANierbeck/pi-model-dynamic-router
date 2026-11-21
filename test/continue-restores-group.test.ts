@@ -14,6 +14,19 @@ import { flushBackgroundScan } from './helpers/noop-scan-cache.ts';
 import { paidCloudModel } from './helpers/stream-fixtures.ts';
 import { withRouterEnv } from './helpers/router-env.ts';
 
+// Outcome records the router writes (ADR-0027): the restore must not log a
+// user model pick nobody made.
+const writeOutcomeRecord = vi.hoisted(() => vi.fn());
+vi.mock('../src/classifier-decision-log.ts', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/classifier-decision-log.ts')>();
+  return { ...actual, writeOutcomeRecord };
+});
+const routerLog = vi.hoisted(() => vi.fn());
+vi.mock('../src/logger.ts', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/logger.ts')>();
+  return { ...actual, routerLog };
+});
+
 const GROUPS: ReadonlySet<string> = new Set(['dynamic', 'planning']);
 const PHYSICAL = { provider: 'paid-cloud-provider', id: 'paid-model' };
 
@@ -51,9 +64,36 @@ describe('groupToRestore — when Pi fell back to the last responder', () => {
     });
   });
 
-  it('judges the latest successful reply, not a failed one after it', () => {
+  // Review 2026-11-21: Pi's getBranchSelection takes the latest assistant
+  // reply whatever its stopReason; the router forwards a physical model's
+  // aborted or failed message unchanged, so Pi restores THAT model.
+  it('an aborted last reply on another model is still Pi’s fallback', () => {
+    const branch = [...routedBranch(), userMsg(), reply('other-provider', 'other', 'aborted')];
+    expect(groupToRestore(branch, { provider: 'other-provider', id: 'other' }, GROUPS)).toEqual({
+      provider: 'dynamic',
+      modelId: 'dynamic',
+    });
+  });
+
+  it('a failed physical last reply is still Pi’s fallback', () => {
     const branch = [...routedBranch(), userMsg(), reply('other-provider', 'other', 'error')];
-    expect(groupToRestore(branch, PHYSICAL, GROUPS)).not.toBeNull();
+    expect(
+      groupToRestore(branch, { provider: 'other-provider', id: 'other' }, GROUPS)
+    ).not.toBeNull();
+  });
+
+  it('a Pi virtual-model reply does not count as the last responder', () => {
+    const virtualReply = {
+      type: 'message',
+      message: {
+        role: 'assistant',
+        api: 'pi-virtual',
+        provider: 'v',
+        model: 'v',
+        stopReason: 'error',
+      },
+    };
+    expect(groupToRestore([...routedBranch(), virtualReply], PHYSICAL, GROUPS)).not.toBeNull();
   });
 });
 
@@ -94,16 +134,40 @@ describe('groupToRestore — leaves every other start alone', () => {
 });
 
 describe('session_start wiring', () => {
+  interface Resumed {
+    setModel: ReturnType<typeof vi.fn>;
+    setThinkingLevel: ReturnType<typeof vi.fn>;
+    /** Whether the session_start handler returned only after the switch. */
+    awaitedSwitch: boolean;
+  }
+
   async function resume(
     branch: any[],
     current: any,
-    hasUI = true
-  ): Promise<ReturnType<typeof vi.fn>> {
-    let setModel!: ReturnType<typeof vi.fn>;
+    hasUI = true,
+    thinkingAfterSwitch = 'off'
+  ): Promise<Resumed> {
+    const out = {} as Resumed;
     await withRouterEnv(
       async (defaultExport, tmpDir) => {
+        writeOutcomeRecord.mockClear();
+        routerLog.mockClear();
         const { ctx: pi, onHandlers } = makeObservableExtensionContext();
-        setModel = pi.setModel;
+        let switched = false;
+        let liveModel = current;
+        // Pi's setModel: auth check first (async), then the switch, then the
+        // model_select event (source "set") the router also listens to.
+        pi.setModel = vi.fn(async (model: any) => {
+          await new Promise((r) => setTimeout(r, 5));
+          liveModel = model;
+          switched = true;
+          await onHandlers['model_select']?.({ type: 'model_select', model, source: 'set' }, ctx);
+          return true;
+        });
+        pi.getThinkingLevel = vi.fn(() => thinkingAfterSwitch);
+        pi.setThinkingLevel = vi.fn();
+        out.setModel = pi.setModel;
+        out.setThinkingLevel = pi.setThinkingLevel;
         defaultExport(pi);
         const physical = paidCloudModel();
         const modelRegistry = {
@@ -117,24 +181,72 @@ describe('session_start wiring', () => {
           getApiKeyForProvider: async () => null,
           getRegisteredProviderIds: () => [],
         };
-        const ctx = {
+        const ctx: any = {
           ...makeSessionCtx({ modelRegistry, cwd: tmpDir }),
-          model: current,
+          get model() {
+            return liveModel;
+          },
           hasUI,
           sessionManager: { getBranch: () => branch, getEntries: () => branch },
         };
         await onHandlers['session_start']?.({ reason: 'startup' }, ctx);
+        out.awaitedSwitch = switched;
         await flushBackgroundScan();
       },
-      { config: { model_groups: { dynamic: { method: 'dynamic' } } }, disableNetwork: true }
+      {
+        config: {
+          model_groups: { dynamic: { method: 'dynamic' } },
+          classifier: { log: { enabled: true, store_text: 'none' } },
+        },
+        disableNetwork: true,
+      }
     );
-    return setModel;
+    return out;
   }
 
   it('pi --continue on a routed session switches back to the group', async () => {
-    const setModel = await resume(routedBranch(), paidCloudModel());
+    const { setModel } = await resume(routedBranch(), paidCloudModel());
     expect(setModel).toHaveBeenCalledTimes(1);
     expect(setModel.mock.calls[0][0]).toMatchObject({ provider: 'dynamic', id: 'dynamic' });
+  }, 30000);
+
+  // Review 2026-11-21 (Minor 3): Pi awaits what session_start returns; a
+  // prompt sent right after the start must already go to the group.
+  it('session_start returns only after the group is selected', async () => {
+    const { awaitedSwitch } = await resume(routedBranch(), paidCloudModel());
+    expect(awaitedSwitch).toBe(true);
+  }, 30000);
+
+  // Review 2026-11-21 (Important 2): Pi's setModel takes the thinking level
+  // from the settings, Pi's resume from the branch. The branch's level wins.
+  it('the branch’s thinking level survives the switch', async () => {
+    const branch = [{ type: 'thinking_level_change', thinkingLevel: 'high' }, ...routedBranch()];
+    const { setThinkingLevel } = await resume(branch, paidCloudModel());
+    expect(setThinkingLevel).toHaveBeenCalledWith('high');
+  }, 30000);
+
+  it('a thinking level the switch kept is not set again', async () => {
+    const branch = [{ type: 'thinking_level_change', thinkingLevel: 'high' }, ...routedBranch()];
+    const { setThinkingLevel } = await resume(branch, paidCloudModel(), true, 'high');
+    expect(setThinkingLevel).not.toHaveBeenCalled();
+  }, 30000);
+
+  // Review 2026-11-21 (Minor 2): the restore's model_select (source "set")
+  // is no user pick — no outcome record for it.
+  it('the restore writes no model_select outcome', async () => {
+    await resume(routedBranch(), paidCloudModel());
+    const picks = writeOutcomeRecord.mock.calls.filter((c) => c[0]?.via === 'model_select');
+    expect(picks).toEqual([]);
+  }, 30000);
+
+  // Review 2026-11-21 (Minor 1): ctx.model is a live getter; the log names
+  // the model Pi restored, not the group selected afterwards.
+  it('the log line names the model Pi restored', async () => {
+    await resume(routedBranch(), paidCloudModel());
+    const line = routerLog.mock.calls
+      .map((c) => String(c[0]))
+      .find((l) => l.includes('resumed session'));
+    expect(line).toContain('Pi restored paid-cloud-provider/paid-model');
   }, 30000);
 
   // pi-subagents forks the parent's branch into a child session and starts it
@@ -142,13 +254,13 @@ describe('session_start wiring', () => {
   // the model that answered the parent last would look like Pi's fallback;
   // its explicit model must win, so only sessions with a UI are restored.
   it('a headless child session (forked subagent) keeps its model', async () => {
-    const setModel = await resume(routedBranch(), paidCloudModel(), false);
+    const { setModel } = await resume(routedBranch(), paidCloudModel(), false);
     expect(setModel).not.toHaveBeenCalled();
   }, 30000);
 
   it('a resumed session on a deliberately chosen model keeps it', async () => {
     const branch = [...routedBranch(), modelChange('paid-cloud-provider', 'paid-model')];
-    const setModel = await resume(branch, paidCloudModel());
+    const { setModel } = await resume(branch, paidCloudModel());
     expect(setModel).not.toHaveBeenCalled();
   }, 30000);
 });

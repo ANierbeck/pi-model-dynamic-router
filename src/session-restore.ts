@@ -30,13 +30,18 @@ function field(value: unknown, key: string): unknown {
     : undefined;
 }
 
+/** API id of Pi's virtual catalog models (pi-coding-agent `VIRTUAL_MODEL_API`). */
+const PI_VIRTUAL_API = 'pi-virtual';
+
 /**
  * The group to select again, or null. Only when Pi fell back to the last
  * responder: the branch's latest `model_change` names one of the router's
  * group models (a deliberate `/model` switch to a concrete model writes its
  * own `model_change` and wins), the current model is no group model, and it
- * is the model of the latest successful reply — what getBranchSelection
- * returns for a non-virtual selection.
+ * is the model of the latest assistant reply that does not name a Pi virtual
+ * model — exactly the reply getBranchSelection returns for a non-virtual
+ * selection, whatever its stopReason (the router forwards a physical model's
+ * aborted or failed message unchanged; review 2026-11-21).
  */
 export function groupToRestore(
   branch: readonly unknown[],
@@ -64,11 +69,21 @@ export function groupToRestore(
       !lastReply &&
       type === 'message' &&
       field(message, 'role') === 'assistant' &&
-      field(message, 'stopReason') !== 'error' &&
-      field(message, 'stopReason') !== 'aborted'
+      field(message, 'api') !== PI_VIRTUAL_API
     ) {
       lastReply = { provider: field(message, 'provider'), model: field(message, 'model') };
     }
   }
   return null;
+}
+
+/** The thinking level the branch records last (Pi's resume restores it), or undefined. */
+export function branchThinkingLevel(branch: readonly unknown[]): string | undefined {
+  for (let i = branch.length - 1; i >= 0; i--) {
+    const entry = branch[i];
+    if (field(entry, 'type') !== 'thinking_level_change') continue;
+    const level = field(entry, 'thinkingLevel');
+    return typeof level === 'string' ? level : undefined;
+  }
+  return undefined;
 }
