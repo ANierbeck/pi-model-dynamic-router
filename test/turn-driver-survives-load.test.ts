@@ -15,7 +15,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, it, expect, vi } from 'vitest';
 import { makeExtensionContext, startSession } from './helpers/extension-harness.ts';
-import { doneEvent, paidCloudModel } from './helpers/stream-fixtures.ts';
+import { paidCloudModel } from './helpers/stream-fixtures.ts';
+import { successStream } from './helpers/drive-stream-env.ts';
 import { withRouterEnv } from './helpers/router-env.ts';
 
 const CONFIG = {
@@ -49,12 +50,7 @@ describe('the turn driver survives the Router rebuild of load()', () => {
           find: (_p: string, id: string) => (id === 'other-model' ? other : paid),
           getApiKeyForProvider: async () => null,
           runtime: {
-            streamSimple: vi.fn(() =>
-              (async function* () {
-                yield { type: 'text_delta', delta: 'ok' };
-                yield doneEvent();
-              })()
-            ),
+            streamSimple: vi.fn(() => successStream('ok')),
           },
         };
         await startSession(onHandlers, { modelRegistry, cwd: tmpDir });

@@ -7,7 +7,8 @@
 // footer of the concrete model named the group that served before the switch.
 import { describe, it, expect, vi } from 'vitest';
 import { makeExtensionContext, fakeSessionManager } from './helpers/extension-harness.ts';
-import { doneEvent, paidCloudModel } from './helpers/stream-fixtures.ts';
+import { paidCloudModel } from './helpers/stream-fixtures.ts';
+import { successStream } from './helpers/drive-stream-env.ts';
 import { withRouterEnv } from './helpers/router-env.ts';
 import { flushBackgroundScan } from './helpers/noop-scan-cache.ts';
 
@@ -37,12 +38,7 @@ describe('the footer of a concrete model after a served group', () => {
           find: () => paid,
           getApiKeyForProvider: async () => null,
           runtime: {
-            streamSimple: vi.fn(() =>
-              (async function* () {
-                yield { type: 'text_delta', delta: 'ok' };
-                yield doneEvent();
-              })()
-            ),
+            streamSimple: vi.fn(() => successStream('ok')),
           },
         };
         let render: (() => string) | undefined;
@@ -67,8 +63,9 @@ describe('the footer of a concrete model after a served group', () => {
         await flushBackgroundScan();
         expect(render, 'session_start installs the footer').toBeDefined();
 
-        // Two served streams on the `standard` group model: the first writes
-        // the branch group, the second mirrors it into the Router.
+        // Two served streams on the `standard` group model. In the red phase
+        // the second one mirrored the branch group into the Router's copy,
+        // which outlived the switch below.
         const serve = async (): Promise<void> => {
           const stream: AsyncIterable<unknown> = await defaultExport.groupStream(
             { provider: 'standard', id: 'standard' },

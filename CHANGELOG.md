@@ -70,7 +70,9 @@ without the owner's explicit release approval).
     live on the session branch** (Pi's `pi.virtual-model-state` entries), so
     a fork or `/tree` jump sees its own branch's values and a restart keeps
     them: the first turn after `--continue` inherits the previous category,
-    and the per-group `context_budget` of the group that last served applies
+    and the per-group `context_budget` of the group the last request was
+    routed to (after a failed walk, the `fallback_groups` entry that took
+    over) applies
     from the first turn. A write that changes nothing appends no entry.
   - The Router's own copy of the session group is gone: a switch to a
     concrete model no longer leaves the footer naming the group that served

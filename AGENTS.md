@@ -112,7 +112,8 @@
   pin-only `set_model_from_group`) incl. its two review rounds, then the `:use-static` drop (ADR 0037:
   the keyword classifier's tests went with it; 3703 passing / 3 skipped) + step 3 branch-state (3721 passing /
   3 skipped) + step 5 workaround removal (served-group writer, Router group
-  copy removed; 3723 passing / 3 skipped); do not lower the bar to a count).
+  copy removed) incl. its review round (decision-log prevTurn, /router current
+  mark; 3731 passing / 3 skipped); do not lower the bar to a count).
   Don't lower the `coverage.thresholds` in `vitest.config.ts` to unblock a
   red run — fix the actual regression.
 - New features/fixes get a regression test that actually exercises the fix

@@ -9,7 +9,8 @@ Steps 2, 3 and 5 built on `feat/virtual-selection` (2026-11-21), not yet
 merged (review rounds 1–2 clean; steps 3 and 5 in review). Step 4 (owner live
 phase) is open.
 
-**Verified against:** `main` @ `36ddef3`; pi-coding-agent 1.6.0:
+**Verified against:** `main` @ `36ddef3` (steps 2, 3 and 5: branch
+`feat/virtual-selection` @ `1c6a00d`); pi-coding-agent 1.6.0:
 `docs/virtual-models.md`; `dist/core/virtual-models.js` L29–42
 (`getBranchSelection`), L65–85 (`createVirtualModel`); `dist/core/model-runtime.js`
 L504–523 (`direct` routing of `streamSimple`), L743–766 (`resolveModel`:
@@ -194,8 +195,8 @@ hides the groups from `/model` and turns `set_model_from_group` into a pin
    `/tree` jump see their own branch's category, and a restart keeps it.
    **Done 2026-11-21:** `src/virtual-selection.ts` persists
    `{ group, runGroup, lastCategory, pin }` per branch through the
-   `SelectionStateSource` (`persist` re-uses the latest written entry when only
-   the group advanced, `foldSelectionState` treats an absent field as pass-through
+   `SelectionStateSource` (a write folds into the stored state:
+   `foldSelectionState` treats an absent field as pass-through
    and an explicit null as a clear); the orchestrator reads/writes
    `activeGroup`/`runGroup`/`lastClassifiedCategory` through it instead of the
    in-memory `TurnState` fields (now gone); `decideSelection` reads the branch so

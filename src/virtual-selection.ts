@@ -31,9 +31,10 @@ export const STATE_ENTRY = 'pi.virtual-model-state';
  * the current tool follow-up run's group, `lastCategory` the previous turn's
  * classified category (inherited by terse follow-ups).
  *
- * `group` is the group of the candidate a stream was last opened on, on this
- * branch (the classified group, or the fallback group after a failover),
- * written by the orchestrator's recordServedRef (step 5, owner decision 2026-11-21). The
+ * `group` is the group whose candidate walk last opened a stream on this
+ * branch (the classified or pinned group; after an all-failed walk, the
+ * fallback group the cascade walked), written by the orchestrator's
+ * recordServedRef (step 5, owner decision 2026-11-21). The
  * per-group compaction budget and the decision log's previous-turn group read
  * it, so both survive a restart; `model_select` clears it to null. It is not
  * route()'s dispatch group (`router/dynamic` dispatches to `dynamic` unless

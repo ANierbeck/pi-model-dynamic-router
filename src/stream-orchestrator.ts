@@ -360,13 +360,16 @@ function recordServedRef(ctx: StreamOrchestratorContext, ref: string, groupName?
   if (inSubCall()) return;
   ctx.router.setCurModel(ref);
   ctx.lastDynamicModel = ref;
-  // Step 5 (owner decision 2026-11-21): the served stream writes the branch
-  // state's `group` — the group of the candidate the stream is opened on
-  // (the classified group, or the fallback group after a failover; called
-  // before tryStream, so a failed last attempt still names its group). The
-  // per-group compaction budget and the decision log's previous-turn group
-  // read it, so both survive a restart. An unchanged group appends nothing
-  // (createSelectionStateSource).
+  // Step 5 (owner decision 2026-11-21): a stream writes the branch state's
+  // `group` — the group whose candidate walk opened it. That is the walk's
+  // group, not the served model's: candidates merged in from fallback_groups
+  // walk under the primary group's name; only the all-failed cascade walks a
+  // fallback group under its own name. The main walk records after tryStream
+  // returned a stream (a walk that opens nothing keeps the previous group);
+  // the breaker probe and the cooldown collapse record before their
+  // tryStream. The per-group compaction budget and the decision log's
+  // previous-turn group read it, so both survive a restart. An unchanged
+  // group appends nothing (createSelectionStateSource).
   if (groupName) ctx.activeGroup = groupName;
 }
 
