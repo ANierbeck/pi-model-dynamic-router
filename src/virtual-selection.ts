@@ -17,10 +17,134 @@ export const VIRTUAL_MODEL_ID = 'dynamic';
 /** Why Pi routes a request (pi-coding-agent `ModelRouteReason`). */
 export type SelectionReason = 'user' | 'continuation' | 'retry' | 'direct';
 
-/** Router state on the session branch (Pi's `pi.virtual-model-state`). */
+/** Pi's custom entry type for the state route() returns (pi.virtual-model-state). */
+export const STATE_ENTRY = 'pi.virtual-model-state';
+
+/**
+ * Router state on the session branch (Pi's `pi.virtual-model-state`). Step 3
+ * of the migration plan stores more than the pin here, so a fork and a /tree
+ * jump see their own branch's values and a restart keeps them:
+ * `group` is the group the session last routed through (compaction budget),
+ * `runGroup` the current tool follow-up run's group, `lastCategory` the
+ * previous turn's classified category (inherited by terse follow-ups).
+ */
 export interface SelectionState {
   /** The pinned group, or null when the classifying group decides. */
   readonly pin: string | null;
+  readonly group?: string | null | undefined;
+  readonly runGroup?: string | null | undefined;
+  readonly lastCategory?: string | undefined;
+}
+
+function str(v: unknown): string | undefined {
+  return typeof v === 'string' ? v : undefined;
+}
+function strOrNull(v: unknown): string | null | undefined {
+  return typeof v === 'string' ? v : v === null ? null : undefined;
+}
+
+function storedStateEntry(branch: readonly unknown[]): Record<string, unknown> | undefined {
+  for (let i = branch.length - 1; i >= 0; i--) {
+    const entry = branch[i] as
+      | { type?: unknown; customType?: unknown; data?: Record<string, unknown> }
+      | undefined;
+    if (entry?.type !== 'custom' || entry.customType !== STATE_ENTRY) continue;
+    const data = entry.data;
+    if (data?.provider !== VIRTUAL_PROVIDER || data.modelId !== VIRTUAL_MODEL_ID) continue;
+    // A non-object state Pi or an older router wrote is skipped, not trusted.
+    if (typeof (data.state as Record<string, unknown>) !== 'object' || data.state === null)
+      continue;
+    return data.state as Record<string, unknown>;
+  }
+  return undefined;
+}
+
+/**
+ * The full state the branch stores last for `router/dynamic`, or undefined
+ * when the branch stores no state (Pi's getVirtualModelState, which
+ * extensions cannot import). Tolerant: garbage entries are skipped.
+ */
+export function branchState(branch: readonly unknown[]): SelectionState | undefined {
+  const s = storedStateEntry(branch);
+  if (!s) return undefined;
+  const pin = strOrNull(s.pin);
+  if (pin === undefined) return undefined; // no usable pin field: treat as no state
+  return {
+    pin,
+    group: strOrNull(s.group),
+    runGroup: strOrNull(s.runGroup),
+    lastCategory: str(s.lastCategory),
+  };
+}
+
+/**
+ * The complete state after one field changes: unmentioned fields pass
+ * through, `pin` is normalized. Every writer stores the WHOLE state, because
+ * a state write replaces the branch's last entry.
+ */
+export function foldSelectionState(
+  current: SelectionState | undefined,
+  partial: Partial<SelectionState>
+): SelectionState {
+  // An ABSENT field passes the stored value through; an explicit null is a
+  // deliberate CLEAR (a ?? would fall through on the null and re-graft the
+  // stored value — exactly the leak the field semantics must not have).
+  const pass = <T extends string | null | undefined>(incoming: T | undefined, stored: T): T =>
+    // Not ?? — an explicit null in the partial is a deliberate CLEAR and must
+    // not fall through to the stored value.
+    // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
+    incoming === undefined ? stored : incoming;
+  return {
+    pin: pass(partial.pin, current?.pin ?? null),
+    group: pass(partial.group, current?.group),
+    runGroup: pass(partial.runGroup, current?.runGroup),
+    lastCategory: pass(partial.lastCategory, current?.lastCategory),
+  };
+}
+
+/** An append-only sink for the branch state (index.ts wires the SessionManager). */
+export interface SelectionStateSink {
+  appendState(state: SelectionState): void;
+}
+
+/**
+ * Read/write access to the session's branch state, memoized by the branch's
+ * leaf id (a /tree jump changes the leaf, so the memo cannot serve a stale
+ * branch). io must resolve the AMBIENT session's manager — liveSessions,
+ * not the latest-started ctx.
+ */
+export function createSelectionStateSource(io: {
+  branch(): readonly unknown[];
+  leafId(): string | undefined;
+  appendState(state: SelectionState): void;
+}): {
+  read(): SelectionState | undefined;
+  write(partial: Partial<Omit<SelectionState, 'pin'>>): void;
+} {
+  let memoLeaf: string | undefined;
+  let memoHasRead = false;
+  let memoState: SelectionState | undefined;
+  return {
+    read(): SelectionState | undefined {
+      const leaf = io.leafId();
+      // An unknown leaf (empty branch, or a manager without getLeafId) is no
+      // memo key — re-read, never serve a cache entry from another branch.
+      if (leaf === undefined) return branchState(io.branch());
+      if (!memoHasRead || leaf !== memoLeaf) {
+        memoLeaf = leaf;
+        memoState = branchState(io.branch());
+        memoHasRead = true;
+      }
+      return memoState;
+    },
+    write(partial): void {
+      try {
+        io.appendState(foldSelectionState(this.read(), partial));
+      } catch {
+        // No manager in scope (plain process code): nothing to persist.
+      }
+    },
+  };
 }
 
 /** A group config as far as the selection reads it. */
@@ -77,7 +201,9 @@ export function decideSelection(input: SelectionInput): SelectionDecision {
   if (reason === 'direct') return { group, state: undefined };
   const malformed = state !== undefined && (state as { pin?: unknown }).pin !== stored;
   const changed = pending !== undefined || pin !== stored || malformed;
-  return { group, state: changed ? { pin } : undefined };
+  // Step 3: a state write replaces the branch's last entry, so it carries the
+  // OTHER stored fields too (group / runGroup / lastCategory).
+  return { group, state: changed ? foldSelectionState(state, { pin }) : undefined };
 }
 
 /** Pins set by a tool during a turn, handed to the session's next route() call. */
@@ -138,26 +264,13 @@ export function createServedGroups(): ServedGroups {
   };
 }
 
-/** Pi's custom entry type for the state route() returns (pi.virtual-model-state). */
-const STATE_ENTRY = 'pi.virtual-model-state';
-
 /**
  * The pin the branch stored last for `router/dynamic`: a group, null for
  * none, undefined when the branch stores no state (Pi's
  * getVirtualModelState, which extensions cannot import).
  */
 export function branchPin(branch: readonly unknown[]): string | null | undefined {
-  for (let i = branch.length - 1; i >= 0; i--) {
-    const entry = branch[i] as
-      | { type?: unknown; customType?: unknown; data?: Record<string, unknown> }
-      | undefined;
-    if (entry?.type !== 'custom' || entry.customType !== STATE_ENTRY) continue;
-    const data = entry.data;
-    if (data?.provider !== VIRTUAL_PROVIDER || data.modelId !== VIRTUAL_MODEL_ID) continue;
-    const pin = (data.state as { pin?: unknown } | undefined)?.pin;
-    return typeof pin === 'string' ? pin : null;
-  }
-  return undefined;
+  return branchState(branch)?.pin;
 }
 
 /** Where sessionGroupOf looks for the group of a session on `router/dynamic`. */
@@ -189,8 +302,15 @@ export function sessionGroupOf(
     const served = sources.served.get(sessionId);
     if (known(served)) return served;
     const pending = sources.pins.peek(sessionId);
-    const pin = pending !== undefined ? pending : branchPin(sources.branch);
-    return known(pin) ? pin : dispatchGroupOf(groups);
+    // A pending pin (applied by the next route()) decides, INCLUDING a
+    // pending null — that is a release, it beats the stored values.
+    if (pending !== undefined) return known(pending) ? pending : dispatchGroupOf(groups);
+    // The state persisted on THIS branch (step 3) — survives a restart, and a
+    // /tree jump reads the jumped-to branch.
+    const st = branchState(sources.branch);
+    if (known(st?.group)) return st.group;
+    if (known(st?.pin)) return st.pin;
+    return dispatchGroupOf(groups);
   }
   const group = model?.id;
   return known(group) && model?.provider === group ? group : null;

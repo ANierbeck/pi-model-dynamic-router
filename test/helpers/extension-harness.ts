@@ -22,14 +22,39 @@ export interface ExtensionContextHarness {
 }
 
 /**
+ * A fake pi SessionManager over an in-memory entries array — enough of the
+ * real entry semantics for the router's branch reads/writes (custom entries
+ * of type `custom` + `customType`, leaf id = the last entry's id).
+ */
+export function fakeSessionManager(initial: unknown[] = []): any {
+  let entries: any[] = [...initial];
+  let nextId = 1;
+  return {
+    __dbgId: Math.random().toString(36).slice(2, 8),
+    getSessionId: () => 'harness-session',
+    getBranch: () => [...entries],
+    getEntries: () => [...entries],
+    getLeafId: () => entries[entries.length - 1]?.id,
+    appendCustomEntry: (customType: string, data: unknown) => {
+      const id = `e${nextId++}`;
+      entries = [...entries, { id, type: 'custom', customType, data }];
+      return id;
+    },
+  };
+}
+
+/**
  * A mocked ExtensionContext with the registrars every router test needs.
  * No caller varies the shape today (all 15 pass nothing); a test that needs
  * `modelRegistry`, `cwd` or `ui` re-declares just that field on `ctx` — the
- * point of the helper is the registrar block, not a config surface.
+ * point of the helper is the registrar block, not a config surface. The
+ * default sessionManager is a fakeSessionManager: since the branch state
+ * (migration plan step 3) the router persists per-session state through it.
  */
 export function makeExtensionContext(): ExtensionContextHarness {
   const onHandlers: EventHandlers = {};
   const ctx: any = {
+    sessionManager: fakeSessionManager(),
     registerTool: vi.fn(),
     registerCommand: vi.fn(),
     registerVirtualModel: vi.fn(),
@@ -61,6 +86,9 @@ export function makeSessionCtx(options: SessionCtxOptions & { ui?: any }): any {
   return {
     modelRegistry: options.modelRegistry,
     cwd: options.cwd,
+    // Real pi session ctxs always carry the session's SessionManager — the
+    // router persists per-session state on it (migration plan step 3).
+    sessionManager: fakeSessionManager(),
     ui: options.ui ?? { setFooter: vi.fn() },
   };
 }

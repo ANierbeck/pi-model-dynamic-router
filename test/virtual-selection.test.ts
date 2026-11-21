@@ -6,9 +6,12 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
+  branchPin,
+  branchState,
   createPinHandoff,
   createServedGroups,
   decideSelection,
+  foldSelectionState,
   sessionGroupOf,
   dispatchGroupOf,
   VIRTUAL_MODEL_ID,
@@ -197,5 +200,149 @@ describe('sessionGroupOf', () => {
 describe('the virtual model ref', () => {
   it('is router/dynamic (owner decision 2026-11-21)', () => {
     expect(`${VIRTUAL_PROVIDER}/${VIRTUAL_MODEL_ID}`).toBe('router/dynamic');
+  });
+});
+
+describe('branch state beyond the pin (plan step 3)', () => {
+  const VIRTUAL = { provider: VIRTUAL_PROVIDER, id: VIRTUAL_MODEL_ID };
+  const entry = (state: unknown): unknown => ({
+    type: 'custom',
+    customType: 'pi.virtual-model-state',
+    data: { provider: VIRTUAL_PROVIDER, modelId: VIRTUAL_MODEL_ID, state },
+  });
+
+  describe('branchState — the full stored state', () => {
+    it('reads pin, group, runGroup and lastCategory from the latest entry', () => {
+      const branch = [
+        entry({ pin: null, group: 'simple' }),
+        entry({
+          pin: 'planning',
+          group: 'planning',
+          runGroup: 'planning',
+          lastCategory: 'code_complex',
+        }),
+      ];
+      expect(branchState(branch)).toEqual({
+        pin: 'planning',
+        group: 'planning',
+        runGroup: 'planning',
+        lastCategory: 'code_complex',
+      });
+    });
+
+    it('an entry that stores only the pin yields the others undefined (pre-step-3 branches)', () => {
+      expect(branchState([entry({ pin: 'planning' })])).toEqual({ pin: 'planning' });
+      expect(branchState([entry({ pin: null })])).toEqual({ pin: null });
+    });
+
+    it('tolerates garbage: no entry, a non-object state, a wrong provider', () => {
+      expect(branchState([])).toBeUndefined();
+      expect(branchState([entry('garbage'), entry({ pin: null })])).toEqual({ pin: null });
+      expect(
+        branchState([
+          {
+            type: 'custom',
+            customType: 'pi.virtual-model-state',
+            data: { provider: 'other', modelId: 'dynamic', state: { pin: 'x' } },
+          },
+        ])
+      ).toBeUndefined();
+    });
+
+    it('branchPin stays the pin view of branchState', () => {
+      expect(branchPin([entry({ pin: 'planning', group: 'planning' })])).toBe('planning');
+      expect(branchPin([entry('garbage')])).toBeUndefined();
+    });
+  });
+
+  describe('foldSelectionState — every writer stores the WHOLE state', () => {
+    it('partial fields override, the rest pass through, pin is normalized', () => {
+      const current = {
+        pin: 'planning',
+        group: 'planning',
+        runGroup: null,
+        lastCategory: 'code_complex',
+      };
+      expect(foldSelectionState(current, { runGroup: 'code_complex' })).toEqual({
+        pin: 'planning',
+        group: 'planning',
+        runGroup: 'code_complex',
+        lastCategory: 'code_complex',
+      });
+    });
+
+    it('writes over no stored state', () => {
+      expect(foldSelectionState(undefined, { pin: null })).toEqual({
+        pin: null,
+        group: undefined,
+        runGroup: undefined,
+        lastCategory: undefined,
+      });
+    });
+  });
+
+  describe('decideSelection — the route() state carries the other fields', () => {
+    it('a pin change keeps group, runGroup and lastCategory', () => {
+      const d = decideSelection({
+        reason: 'user',
+        state: { pin: null, group: 'simple', runGroup: 'simple', lastCategory: 'simple' } as any,
+        pending: 'planning',
+        groupNames: groups,
+        dispatchGroup: 'dynamic',
+      });
+      expect(d.group).toBe('planning');
+      expect(d.state).toEqual({
+        pin: 'planning',
+        group: 'simple',
+        runGroup: 'simple',
+        lastCategory: 'simple',
+      });
+    });
+
+    it('the classifying-group release keeps the other fields too', () => {
+      const d = decideSelection({
+        reason: 'continuation',
+        state: { pin: 'planning', group: 'planning', lastCategory: 'design' } as any,
+        pending: undefined,
+        groupNames: groups,
+        dispatchGroup: 'dynamic',
+      });
+      expect(d.group).toBe('planning'); // stored pin applies
+      expect(d.state).toBeUndefined(); // unchanged
+    });
+  });
+
+  describe('sessionGroupOf — the persisted group after a restart', () => {
+    // code_complex has to be in the fixture's config: known() filters against it.
+    const CFG: any = {
+      dynamic: { method: 'dynamic' },
+      planning: { method: 'best' },
+      code_complex: { method: 'best' },
+    };
+    const of = (opts: {
+      pending?: string | null;
+      branch?: unknown[];
+      served?: string;
+    }): string | null => {
+      const served = createServedGroups();
+      if (opts.served) served.record('s', opts.served);
+      const pins = createPinHandoff();
+      if (opts.pending !== undefined) pins.set('s', opts.pending);
+      return sessionGroupOf(VIRTUAL, 's', CFG, { served, pins, branch: opts.branch ?? [] });
+    };
+
+    it('the branch’s persisted group beats the classifying group, pin and stored pin still outrank it', () => {
+      const g = (group: string | null, pin: string | null = null): unknown[] => [
+        entry({ pin, group }),
+      ];
+      expect(of({ branch: g('planning') })).toBe('planning');
+      expect(of({ branch: g('planning', null), pending: 'code_complex' })).toBe('code_complex');
+      expect(of({ pending: null, branch: g('planning') })).toBe('dynamic'); // a pending release beats the persisted group
+      expect(of({ served: 'dynamic', branch: g('planning') })).toBe('dynamic');
+      // A group the config no longer has falls back.
+      expect(of({ branch: g('retired') })).toBe('dynamic');
+      // An old pinned entry without a group still shows its pin.
+      expect(of({ branch: [entry({ pin: 'planning' })] })).toBe('planning');
+    });
   });
 });

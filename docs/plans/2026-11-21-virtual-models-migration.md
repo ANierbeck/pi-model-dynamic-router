@@ -5,7 +5,8 @@ every item, two conditions (`docs/research/2026-11-21-router-shape-spike.md`).
 The owner then decided to migrate for 2.0.0 with the virtual layer as the only
 path (open decisions 1, 2 and 4 below). Steps 2, 3 and 5 are built before
 2.0.0; step 4 (the owner's live phase) is the gate for proposing the release.
-Step 2 built on `feat/virtual-selection` (2026-11-21), not yet merged.
+Steps 2 and 3 built on `feat/virtual-selection` (2026-11-21), not yet merged
+(review rounds 1–2 clean; step 3 in review).
 
 **Verified against:** `main` @ `36ddef3`; pi-coding-agent 1.6.0:
 `docs/virtual-models.md`; `dist/core/virtual-models.js` L29–42
@@ -190,6 +191,19 @@ hides the groups from `/model` and turns `set_model_from_group` into a pin
    inherited category into the branch state; the in-memory `TurnState` keeps
    only what is per request (stream time, turn sequence). Then a fork and a
    `/tree` jump see their own branch's category, and a restart keeps it.
+   **Done 2026-11-21:** `src/virtual-selection.ts` persists
+   `{ group, runGroup, lastCategory, pin }` per branch through the
+   `SelectionStateSource` (`persist` re-uses the latest written entry when only
+   the group advanced, `foldSelectionState` treats an absent field as pass-through
+   and an explicit null as a clear); the orchestrator reads/writes
+   `activeGroup`/`runGroup`/`lastClassifiedCategory` through it instead of the
+   in-memory `TurnState` fields (now gone); `decideSelection` reads the branch so
+   the pin and served group survive restart, fork and `/tree`. Legacy sessions
+   restore into the same store. Red-first: `test/selection-branch-store.test.ts`
+   (8 tests red on the absent store), branch-read pins in
+   `test/virtual-selection.test.ts` (+13), per-session inheritance/end-isolation in
+   `test/session-keyed-turn-state.test.ts` (rewritten: the persisted category
+   replaces the shutdown-amnesia contract).
 4. **Owner live phase (gate for proposing 2.0.0).** The owner works on the
    branch; the decision log and `/router status` are compared against the
    last weeks on the group layer (served models, failovers, cost). No default

@@ -83,7 +83,15 @@ import { createFreeModelRegistration } from './src/free-model-registration.ts';
 import { createStreamProxy } from './src/stream-proxy.ts';
 import { createGroupRegistration } from './src/group-registration.ts';
 import { registerSelectionModel } from './src/virtual-model.ts';
-import { createPinHandoff, createServedGroups, dispatchGroupOf } from './src/virtual-selection.ts';
+import {
+  createPinHandoff,
+  createServedGroups,
+  createSelectionStateSource,
+  dispatchGroupOf,
+  STATE_ENTRY,
+  VIRTUAL_MODEL_ID,
+  VIRTUAL_PROVIDER,
+} from './src/virtual-selection.ts';
 import { createEventHandlers } from './src/event-handlers.ts';
 import { createTools } from './src/tools.ts';
 import { createCommands } from './src/commands.ts';
@@ -235,6 +243,38 @@ const defaultExport = function (pi: ExtensionAPI): void {
     sessionCtx = ctx;
     if (ctx) liveSessions.start(sessionIdOf(ctx) ?? '', ctx);
   };
+
+  // The session's branch state (migration plan step 3): run group, session
+  // group and inherited category persist on pi.virtual-model-state entries, so
+  // a fork and a /tree jump see their own branch's values and a restart keeps
+  // them. The AMBIENT session's manager resolves the io — never the latest
+  // ctx: a subagent child's session_start must not redirect the parent's
+  // mid-turn writes into the child's session file.
+  const ambientCtx = (): ExtensionContext | null => {
+    // currentSessionId() is '' (the default entry) outside any session scope,
+    // not undefined — a falsy sid means scope-less: fall back to the latest
+    // ctx. A REAL sid that is not live (session ended, LRU-evicted) resolves
+    // null — a write must never graft onto another session's branch.
+    const sid = currentSessionId();
+    return sid ? liveSessions.get(sid) : sessionCtx;
+  };
+  const selectionState = createSelectionStateSource({
+    branch: () => ambientCtx()?.sessionManager?.getBranch?.() ?? [],
+    leafId: () => ambientCtx()?.sessionManager?.getLeafId?.() ?? undefined,
+    appendState: (state) => {
+      // The ctx types sessionManager as the Readonly pick; the runtime object
+      // is pi's full SessionManager (appendCustomEntry, session-manager.d.ts).
+      // Reach-through as in src/delegation.ts (registryRuntime.streamSimple).
+      const full = ambientCtx()?.sessionManager as unknown as
+        | { appendCustomEntry?: (customType: string, data?: unknown) => string }
+        | undefined;
+      full?.appendCustomEntry?.(STATE_ENTRY, {
+        provider: VIRTUAL_PROVIDER,
+        modelId: VIRTUAL_MODEL_ID,
+        state,
+      });
+    },
+  });
 
   // Compaction detection state
   let previousMessageCount = 0;
@@ -573,10 +613,10 @@ const defaultExport = function (pi: ExtensionAPI): void {
       return servedGroups;
     },
     get activeGroup() {
-      return turn().activeGroup;
+      return selectionState.read()?.group ?? null;
     },
     set activeGroup(v) {
-      turn().activeGroup = v;
+      selectionState.write({ group: v });
     },
     get cache() {
       return cache;
@@ -1076,10 +1116,10 @@ const defaultExport = function (pi: ExtensionAPI): void {
     // former ctx.curModel field was write-only dead wiring (final v1.6.0
     // review minor #8).
     get activeGroup(): string | null {
-      return turn().activeGroup;
+      return selectionState.read()?.group ?? null;
     },
     set activeGroup(v) {
-      turn().activeGroup = v;
+      selectionState.write({ group: v });
     },
     get lastDynamicModel(): string {
       return turn().lastDynamicModel;
@@ -1088,10 +1128,10 @@ const defaultExport = function (pi: ExtensionAPI): void {
       turn().lastDynamicModel = v;
     },
     get runGroup(): string | null {
-      return turn().runGroup;
+      return selectionState.read()?.runGroup ?? null;
     },
     set runGroup(v) {
-      turn().runGroup = v;
+      selectionState.write({ runGroup: v });
     },
     get runDriver(): string {
       return turn().runDriver;
@@ -1100,10 +1140,12 @@ const defaultExport = function (pi: ExtensionAPI): void {
       turn().runDriver = v;
     },
     get lastClassifiedCategory(): ClassificationResult['category'] | undefined {
-      return turn().lastClassifiedCategory;
+      // The branch stores what a classifier wrote (the set is validated
+      // upstream); the union cast keeps the orchestrator's contract.
+      return selectionState.read()?.lastCategory as ClassificationResult['category'] | undefined;
     },
     set lastClassifiedCategory(v) {
-      turn().lastClassifiedCategory = v;
+      selectionState.write({ lastCategory: v });
     },
     /** ADR-0027 Phase 2: decision-log turn id `<session>#<seq>` of the current turn. */
     turnId: () => `${currentSessionId() || 'default'}#${turn().turnSeq}`,
