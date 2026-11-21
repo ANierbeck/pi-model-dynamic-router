@@ -107,7 +107,8 @@
   race — skeleton fail-open, summary via the verified host `SessionCompactEvent`;
   3605 passing / 3 skipped); the pi 1.6.0 host alignment, the footer status
   line and honoring Pi's `cacheWarming` incl. its review round (3643 passing / 3 skipped);
-  the `--continue` group restore incl. its review round (3662 passing / 3 skipped); do not
+  the `--continue` group restore incl. its review round (3662 passing / 3 skipped);
+  the busy-session `/router fresh` and long-turn `worker_step` plans (3675 passing / 3 skipped); do not
   lower the bar to a count).
   Don't lower the `coverage.thresholds` in `vitest.config.ts` to unblock a
   red run — fix the actual regression.
@@ -303,6 +304,19 @@
   decided step still said "BLOCKED", one mapping claim contradicted the
   code, the 1:1 group rename it planned silently never happened, and the
   file itself was never committed although the CHANGELOG cites it.
+
+## 13. Model use: the expensive model plans, cheap workers do mechanical steps
+
+- **Owner rule 2026-11-21:** the expensive model plans, decides and judges
+  (design, review, the final verification). Mechanical steps go to a cheaper
+  worker: gate runs, log scans, searches, bulk reads, and applying an edit that
+  is already fully specified. A worker step that costs the expensive model its
+  full context is a waste of tokens.
+- This rule is the standing authorisation for the subagent delegation the
+  subagent guidance requires. Delegate only the mechanical part, and keep one
+  writer per worktree.
+- The plan that measures this and decides how far delegation goes is
+  `docs/plans/2026-11-21-long-turn-model-use.md`.
 
 ## 12. ADRs are immutable
 

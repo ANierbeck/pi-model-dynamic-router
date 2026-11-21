@@ -169,6 +169,9 @@ export function resolveContextBudget(
  * the tally, documented in the fresh-session plan). */
 export interface CompactionRunState {
   lastHintAt: number;
+  /** The fresh-session reason that last fired (busy-session plan): the hint
+   * fires once per reason per session, not per cooldown. */
+  lastFreshReason?: string | null;
   /** Completed compactions in the CURRENT session. Drives the fresh-session
    * "compaction is not sticking" trigger (step 5c). Counts ONLY through
    * noteSessionCompaction() (the session_compact event handler): 5b's own
@@ -297,8 +300,13 @@ function runContextCompactionInner(opts: Parameters<typeof runContextCompaction>
       stepsSinceSessionStart: opts.stepsThisSession ?? 0,
       compactionsThisSession: opts.state.compactionsRun,
     });
-    if (fresh.suggest && now - opts.state.lastHintAt >= HINT_COOLDOWN_MS) {
+    if (
+      fresh.suggest &&
+      now - opts.state.lastHintAt >= HINT_COOLDOWN_MS &&
+      fresh.reason !== (opts.state.lastFreshReason ?? null)
+    ) {
       opts.state.lastHintAt = now;
+      opts.state.lastFreshReason = fresh.reason;
       const line = `[router] ${freshStatusLine(fresh)}`;
       routerLog(`[compaction] ${line}`);
       opts.ctx.ui.notify(line, 'info');

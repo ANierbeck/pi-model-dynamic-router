@@ -1409,6 +1409,11 @@ async function handleFreshCommand(
       notify(message: string, type?: 'info' | 'warning' | 'error'): void;
     };
     compact(options?: { customInstructions?: string }): void;
+    /** Host agent state (pi 1.6.0): absent on older hosts, which then
+     * compact immediately as before. */
+    isIdle?(): boolean;
+    waitForIdle?(): Promise<void>;
+    abort?(): void;
     newSession(options?: {
       withSession?: (fresh: {
         sendMessage(message: unknown, options?: { triggerTurn?: boolean }): Promise<void>;
@@ -1430,6 +1435,23 @@ async function handleFreshCommand(
   if (!ok) {
     ctx.ui.notify('Fresh session cancelled — this session continues.', 'info');
     return;
+  }
+
+  // Busy-session plan (2026-11-21): never abort the turn the command was
+  // typed into. Wait for it to end; only after three waits does the command
+  // interrupt the turn once, then proceed.
+  if (typeof ctx.isIdle === 'function' && !ctx.isIdle()) {
+    ctx.ui.notify('/router fresh queued — it runs after the current turn finishes…', 'info');
+    for (let wait = 0; wait < 3 && !ctx.isIdle(); wait++) {
+      await ctx.waitForIdle?.();
+    }
+    if (!ctx.isIdle()) {
+      ctx.ui.notify(
+        '/router fresh: the turn did not end after three waits — interrupting it once',
+        'warning'
+      );
+      ctx.abort?.();
+    }
   }
 
   // The FIRST completed compaction after we asked carries the handoff
@@ -1467,7 +1489,12 @@ async function handleFreshCommand(
   const { cancelled } = await ctx.newSession({
     withSession: async (fresh) => {
       await fresh.sendMessage(freshHandoffMessage(summary, nextStep), { triggerTurn: true });
-      fresh.ui.notify('Fresh session started — the handoff summary is its first prompt.', 'info');
+      fresh.ui.notify(
+        summary !== null
+          ? 'Fresh session started — the handoff summary is its first prompt.'
+          : 'Fresh session started — the compaction did not finish in time, so the handoff is a skeleton (no summary).',
+        'info'
+      );
     },
   });
   if (cancelled) {

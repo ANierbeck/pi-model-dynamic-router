@@ -162,3 +162,93 @@ describe('/router fresh', () => {
     }
   });
 });
+
+describe('/router fresh while a turn runs (busy-session plan)', () => {
+  /** ctx whose turn stays busy until the test releases the wait. */
+  const busyCtx = (over: Record<string, unknown> = {}): any => {
+    let idle = false;
+    let releaseWait: (() => void) | undefined;
+    const ctx = freshCtx({
+      isIdle: () => idle,
+      waitForIdle: vi.fn(
+        () =>
+          new Promise<void>((resolve) => {
+            releaseWait = () => {
+              idle = true; // the running turn ends while we wait
+              resolve();
+            };
+          })
+      ),
+      abort: vi.fn(),
+      ...over,
+    });
+    ctx.releaseWait = () => releaseWait?.();
+    return ctx;
+  };
+
+  it('waits for the running turn and only then compacts — no abort on the first wait', async () => {
+    const rig = freshRig();
+    const ctx = busyCtx();
+    const p = rig.handler('fresh', ctx).then(() => 'done');
+    await vi.waitFor(() => expect(ctx.waitForIdle).toHaveBeenCalledTimes(1));
+    // Queued, not aborted: the turn is still parked in the first wait.
+    expect(ctx.compact).not.toHaveBeenCalled();
+    expect(ctx.abort).not.toHaveBeenCalled();
+    expect(ctx.ui.notify.mock.calls.some((c) => /after the current turn/i.test(String(c[0])))).toBe(
+      true
+    );
+    ctx.releaseWait(); // the turn ends during the wait
+    await vi.waitFor(() => expect(ctx.compact).toHaveBeenCalledTimes(1));
+    rig.onHandlers['session_compact']?.({ compactionEntry: { summary: 'handoff' } });
+    expect(await p).toBe('done');
+    expect(ctx.abort).not.toHaveBeenCalled();
+  });
+
+  it('after three waits without the turn ending, interrupts it once and proceeds', async () => {
+    const rig = freshRig();
+    const ctx = freshCtx({
+      isIdle: () => false, // never idles on its own
+      waitForIdle: vi.fn(async () => {}),
+      abort: vi.fn(),
+    });
+    const p = rig.handler('fresh', ctx).then(() => 'done');
+    await vi.waitFor(() => expect(ctx.abort).toHaveBeenCalledTimes(1));
+    expect(ctx.waitForIdle).toHaveBeenCalledTimes(3);
+    expect(ctx.abort).toHaveBeenCalledTimes(1); // bounded, not a loop
+    rig.onHandlers['session_compact']?.({ compactionEntry: { summary: 'handoff' } });
+    expect(await p).toBe('done');
+    expect(ctx.compact).toHaveBeenCalledTimes(1);
+  });
+
+  it('a skeleton handoff says so in the new session notice', async () => {
+    vi.useFakeTimers();
+    try {
+      const rig = freshRig();
+      const ctx = freshCtx(); // idle: no waiting
+      const p = rig.handler('fresh', ctx).then(() => 'done');
+      await vi.waitFor(() => expect(ctx.compact).toHaveBeenCalledTimes(1));
+      await vi.advanceTimersByTimeAsync(FRESH_WAIT_MS);
+      expect(await p).toBe('done');
+      const opts = ctx.newSession.mock.calls[0][0] as {
+        withSession: (f: unknown) => Promise<void>;
+      };
+      const freshNotify = vi.fn();
+      await opts.withSession({
+        sendMessage: vi.fn(async () => undefined),
+        ui: { notify: freshNotify },
+      });
+      expect(freshNotify.mock.calls.some((c) => /skeleton/i.test(String(c[0])))).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('a command ctx without isIdle (older host shape) compacts right away', async () => {
+    const rig = freshRig();
+    const ctx = freshCtx(); // no isIdle/waitForIdle/abort at all
+    const p = rig.handler('fresh', ctx).then(() => 'done');
+    await vi.waitFor(() => expect(ctx.compact).toHaveBeenCalledTimes(1));
+    rig.onHandlers['session_compact']?.({ compactionEntry: { summary: 'handoff' } });
+    expect(await p).toBe('done');
+  });
+});
