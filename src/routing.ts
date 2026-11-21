@@ -30,6 +30,7 @@ import { normalizeModelId } from './slug-matcher.ts';
 import { isExcluded, globMatcher } from './exclude.ts';
 import { isAgentCapableRef } from './agent-capability.ts';
 import { isBlocked } from './model-blocklist.ts';
+import { VIRTUAL_PROVIDER, VIRTUAL_MODEL_ID } from './virtual-selection.ts';
 import { demoteUnhealthy, isUnhealthy } from './model-health.ts';
 import { isDebugEnabled, debugLogOnce } from './logger.ts';
 import { filterByBudget } from './budget.ts';
@@ -477,13 +478,16 @@ export function getFallbackGroup(
  * both as resolution candidates (allDiscoveredRefs) and from cost
  * diagnostics (the "unknown cost" scan log), where they would otherwise
  * pollute the list with routing artefacts the user can neither price nor
- * exclude.
+ * exclude. The `router/dynamic` virtual selection model counts too: Pi lists
+ * it as available, and routing a turn to it would recurse into the router's
+ * own route() (docs/plans/2026-11-21-virtual-models-migration.md, step 2).
  */
 export function isVirtualGroupRef(ref: string, groupNames: ReadonlySet<string>): boolean {
   const slash = ref.indexOf('/');
   if (slash === -1) return false;
   const provider = ref.slice(0, slash);
   const modelId = ref.slice(slash + 1);
+  if (provider === VIRTUAL_PROVIDER && modelId === VIRTUAL_MODEL_ID) return true;
   return groupNames.has(provider) && (modelId === provider || modelId === `${provider}:use-static`);
 }
 

@@ -145,6 +145,7 @@ describe('driveStream: OpenRouter free-tier daily cap is account-wide', () => {
         const pi: any = {
           registerTool: vi.fn(),
           registerCommand: vi.fn(),
+          registerVirtualModel: vi.fn(),
           registerProvider: vi.fn(),
           setModel: vi.fn(async () => true),
           // COLLECT as arrays: index.ts registers several events (e.g.
@@ -261,6 +262,7 @@ describe('driveStream: "trying X" narration lookahead', () => {
         const pi: any = {
           registerTool: vi.fn(),
           registerCommand: vi.fn(),
+          registerVirtualModel: vi.fn(),
           registerProvider: vi.fn(),
           setModel: vi.fn(async () => true),
           // COLLECT as arrays: index.ts registers several events (e.g.

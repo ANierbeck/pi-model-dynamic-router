@@ -96,6 +96,7 @@ describe('update_model_metrics embedded-file delta write (I1)', () => {
           tools[t.name] = t;
         }),
         registerCommand: vi.fn(),
+        registerVirtualModel: vi.fn(),
         registerProvider: vi.fn(),
         setModel: vi.fn(async () => true),
         on: vi.fn(),
@@ -159,6 +160,7 @@ describe('update_model_metrics embedded-file delta write (I1)', () => {
           tools[t.name] = t;
         }),
         registerCommand: vi.fn(),
+        registerVirtualModel: vi.fn(),
         registerProvider: vi.fn(),
         setModel: vi.fn(async () => true),
         on: vi.fn(),
@@ -210,6 +212,7 @@ describe('update_model_metrics embedded-file delta write (I1)', () => {
             tools[t.name] = t;
           }),
           registerCommand: vi.fn(),
+          registerVirtualModel: vi.fn(),
           registerProvider: vi.fn(),
           setModel: vi.fn(async () => true),
           on: vi.fn(),

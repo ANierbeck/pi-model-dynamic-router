@@ -82,6 +82,8 @@ import { createDynamicConfigRunner } from './src/dynamic-config-runner.ts';
 import { createFreeModelRegistration } from './src/free-model-registration.ts';
 import { createStreamProxy } from './src/stream-proxy.ts';
 import { createGroupRegistration } from './src/group-registration.ts';
+import { registerSelectionModel } from './src/virtual-model.ts';
+import { createPinHandoff, dispatchGroupOf } from './src/virtual-selection.ts';
 import { createEventHandlers } from './src/event-handlers.ts';
 import { createTools } from './src/tools.ts';
 import { createCommands } from './src/commands.ts';
@@ -535,7 +537,7 @@ const defaultExport = function (pi: ExtensionAPI): void {
         isLimited(ref) ? 'rate-limited' : isBreakerOpenFor(ref) ? 'behind an open breaker' : null,
     });
 
-  const { registerGroupProviders, registerGroupModels, declareCacheEconomics } =
+  const { registerGroupProviders, registerGroupModels, declareCacheEconomics, groupContextWindow } =
     createGroupRegistration({
       get cache() {
         return cache;
@@ -1027,6 +1029,18 @@ const defaultExport = function (pi: ExtensionAPI): void {
   metricsModule.loadModelMap(extDir);
   loadCache();
   registerGroupProviders();
+  // The session's selection (docs/plans/2026-11-21-virtual-models-migration.md,
+  // step 2): `router/dynamic` routes each request to a hidden group model.
+  const selectionPins = createPinHandoff();
+  // load() above assigned cfg; read through a closure like every other reader.
+  const configuredGroups = (): Config['model_groups'] => cfg.model_groups ?? {};
+  const loadDispatchGroup = dispatchGroupOf(configuredGroups());
+  const loadWindow = loadDispatchGroup ? groupContextWindow(loadDispatchGroup) : undefined;
+  registerSelectionModel(pi, {
+    groups: configuredGroups,
+    pins: selectionPins,
+    ...(loadWindow ? { contextWindow: loadWindow } : {}),
+  });
 
   // Build the streaming orchestrator context once all helpers are defined.
   // Fields that change mid-session (cfg, cache) are passed as mutable object

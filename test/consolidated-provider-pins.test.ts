@@ -22,6 +22,7 @@ import {
 } from './helpers/extension-harness.ts';
 import { doneEvent, paidCloudModel } from './helpers/stream-fixtures.ts';
 import { bootProjectDir, withRouterEnv, rmTmpDir, teardownBoot } from './helpers/router-env.ts';
+import { providerCall, providerCalls } from './helpers/provider-calls.ts';
 describe('free-model-on-demand-registration', () => {
   /**
    * Integration test: statically-configured free models (cfg.providers[provider]
@@ -85,8 +86,9 @@ describe('free-model-on-demand-registration', () => {
           const registerProviderCalls: any[] = [];
           let openrouterRegistered = false;
           const { pi, onHandlers } = makePiCtx({
-            registerProvider: vi.fn((name: string, opts: any) => {
-              registerProviderCalls.push({ name, opts });
+            registerVirtualModel: vi.fn(),
+            registerProvider: vi.fn((name: any, opts?: any) => {
+              registerProviderCalls.push(providerCall(name, opts));
               if (name === 'openrouter' && Array.isArray(opts?.models)) {
                 openrouterRegistered = true;
               }
@@ -181,8 +183,9 @@ describe('free-model-on-demand-registration', () => {
           const pi: any = {
             registerTool: vi.fn(),
             registerCommand: vi.fn(),
-            registerProvider: vi.fn((name: string, opts: any) => {
-              registerProviderCalls.push({ name, opts });
+            registerVirtualModel: vi.fn(),
+            registerProvider: vi.fn((name: any, opts?: any) => {
+              registerProviderCalls.push(providerCall(name, opts));
             }),
             setModel: vi.fn(async () => true),
             on: vi.fn((event: string, handler: any) => {
@@ -315,17 +318,16 @@ describe('register-group-providers-label', () => {
         const pi: any = {
           registerTool: vi.fn(),
           registerCommand: vi.fn(),
+          registerVirtualModel: vi.fn(),
           registerProvider,
           setModel: vi.fn(async () => true),
           on: vi.fn(),
         };
         defaultExport(pi);
 
-        const dynamicCall = registerProvider.mock.calls.find(
-          (call: any[]) => call[0] === 'dynamic'
-        );
+        const dynamicCall = providerCalls(registerProvider).find((c) => c.name === 'dynamic');
         expect(dynamicCall).toBeDefined();
-        const models = dynamicCall![1].models;
+        const models = dynamicCall!.opts.models;
 
         const mainEntry = models.find((m: any) => m.id === 'dynamic');
         expect(mainEntry.name).toBe('dynamic → auto-classify');
@@ -340,11 +342,9 @@ describe('register-group-providers-label', () => {
         // (or "none" if genuinely nothing resolved — that's the honest state
         // for a static group, unlike the dynamic group's classifier-at-runtime
         // design).
-        const standardCall = registerProvider.mock.calls.find(
-          (call: any[]) => call[0] === 'standard'
-        );
+        const standardCall = providerCalls(registerProvider).find((c) => c.name === 'standard');
         expect(standardCall).toBeDefined();
-        const standardEntry = standardCall![1].models.find((m: any) => m.id === 'standard');
+        const standardEntry = standardCall!.opts.models.find((m: any) => m.id === 'standard');
         expect(standardEntry.name).toMatch(/^standard → /);
       } finally {
         cwdSpy.mockRestore();
@@ -404,8 +404,9 @@ describe('register-group-providers-u1-guard', () => {
       const pi: any = {
         registerTool: vi.fn(),
         registerCommand: vi.fn(),
-        registerProvider: vi.fn((name: string, opts: any) => {
-          registerProviderCalls.push({ name, opts });
+        registerVirtualModel: vi.fn(),
+        registerProvider: vi.fn((name: any, opts?: any) => {
+          registerProviderCalls.push(providerCall(name, opts));
         }),
         setModel: vi.fn(async () => true),
         on: vi.fn((event: string, handler: any) => {
@@ -466,11 +467,14 @@ describe('register-group-providers-u1-guard', () => {
       });
     });
 
-    it('still RE-registers its own groups at session_start even though they now appear in getRegisteredProviderIds', async () => {
+    it('still refreshes its own groups at session_start even though they now appear in getRegisteredProviderIds', async () => {
       // In real pi, by the time session_start fires, getRegisteredProviderIds()
       // contains every provider WE registered at load time. A naive registry
-      // guard ("skip if registered") would therefore skip the session_start
-      // re-register for ALL groups — breaking the resolution-label refresh.
+      // guard ("skip if registered") would therefore refuse the session_start
+      // refresh for ALL groups — breaking the resolution-label refresh. Since
+      // the virtual-models migration (step 2) the refresh reaches Pi through
+      // the provider's live getModels(), without a second registration
+      // (spike condition G1b).
       // The guard must only refuse names the router itself did NOT register
       // (own-set tracking). A foreign-extension collision at load time is
       // genuinely undetectable: pi's extension API exposes no registry query
@@ -485,8 +489,12 @@ describe('register-group-providers-u1-guard', () => {
           for (const h of onHandlers['session_start'] ?? []) await h({}, ctx);
           await flushBackgroundScan();
           const names = registerProviderCalls.map((c) => c.name);
-          // 'standard' is ours — it MUST be re-registered (label refresh).
-          expect(names.filter((n: string) => n === 'standard').length).toBeGreaterThanOrEqual(2);
+          // 'standard' is ours: registered once, and its label is the
+          // session_start resolution (the load-time one named the scan
+          // placeholder).
+          expect(names.filter((n: string) => n === 'standard')).toHaveLength(1);
+          const standard = registerProviderCalls.find((c) => c.name === 'standard');
+          expect(standard!.opts.models[0].name).toBe('standard → paid-cloud-provider/paid-model');
           // The builtin-named group stays refused.
           expect(names).not.toContain('openai');
         }
@@ -606,8 +614,9 @@ describe('mistral-zai-ghost-purge', () => {
     const pi: any = {
       registerTool: vi.fn(),
       registerCommand: vi.fn(),
-      registerProvider: vi.fn((name: string, opts: any) => {
-        registerProviderCalls.push({ name, opts });
+      registerVirtualModel: vi.fn(),
+      registerProvider: vi.fn((name: any, opts?: any) => {
+        registerProviderCalls.push(providerCall(name, opts));
       }),
       setModel: vi.fn(async () => true),
       on: vi.fn((event: string, handler: any) => {

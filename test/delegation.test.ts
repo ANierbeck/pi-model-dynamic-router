@@ -697,6 +697,7 @@ describe('default export wiring: tool_call pre-call read block', () => {
       const pi: any = {
         registerTool: vi.fn(),
         registerCommand: vi.fn(),
+        registerVirtualModel: vi.fn(),
         registerProvider: vi.fn(),
         setModel: vi.fn(async () => true),
         on: vi.fn((event: string, handler: any) => {

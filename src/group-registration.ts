@@ -21,6 +21,7 @@ import type {
   Api,
   Model,
   Context,
+  Provider,
   SimpleStreamOptions,
   AssistantMessageEventStream,
 } from '@earendil-works/pi-ai';
@@ -111,12 +112,15 @@ type RegistryModel = Model<Api> & {
 export interface GroupRegistration {
   registerGroupProviders: () => void;
   registerGroupModels: (ctx: ExtensionContext) => void;
+  /** The window a registered group model carries, or undefined. */
+  groupContextWindow: (groupName: string) => number | undefined;
   /**
    * Declare the cache economics of the model that served a request on the
    * group model Pi asked for (`groupName`/`modelId`), so Pi's CacheWarmer
    * can judge a warm (docs/plans/2026-11-20-honor-pi-cache-warming.md,
-   * step 1). Re-registers the group provider only when the declaration
-   * changes; ids the router did not register are ignored.
+   * step 1). The provider serves its models live, so a declaration needs no
+   * re-registration (spike condition G1b); ids the router did not register
+   * are ignored.
    */
   declareCacheEconomics: (
     groupName: string,
@@ -157,36 +161,73 @@ export function createGroupRegistration(rt: GroupRegistrationDeps): GroupRegistr
     return spec.isDynamic ? [groupName, `${groupName}:use-static`] : [groupName];
   }
 
-  function registerGroupProvider(groupName: string, spec: GroupProviderSpec): void {
-    const { label, contextWindow } = spec;
+  /** The group's models as Pi's catalog lists them, built from the current spec. */
+  function groupModels(groupName: string, spec: GroupProviderSpec): Model<Api>[] {
     const names = spec.isDynamic
-      ? [label, `${groupName} → auto-classify (static fallback allowed)`]
-      : [label];
-    rt.pi.registerProvider(groupName, {
-      baseUrl: 'https://router.local', // not used — streamSimple overrides
-      apiKey: 'router-virtual', // not used — streamSimple overrides
-      // A unique placeholder api name — never a real Api: streamSimple
-      // overrides every request, the value only has to be distinct per
-      // group so two groups cannot overwrite each other's provider.
-      api: `router-group-${groupName}` as Api,
-      streamSimple: rt.groupStream,
-      models: groupModelIds(groupName, spec).map((id, i) => {
-        // Zero price and no prompt-cache lifetime until a request was served:
-        // then the served model's (Pi's CacheWarmer reads both).
-        const economics = declaredEconomics.get(`${groupName}/${id}`) ?? UNDECLARED_CACHE_ECONOMICS;
-        return {
-          id,
-          name: names[i],
-          reasoning: true,
-          input: ['text', 'image'] as ('text' | 'image')[],
-          cost: economics.cost,
-          ...(economics.promptCache ? { promptCache: economics.promptCache } : {}),
-          contextWindow,
-          maxTokens: 64_000,
-        };
-      }),
+      ? [spec.label, `${groupName} → auto-classify (static fallback allowed)`]
+      : [spec.label];
+    return groupModelIds(groupName, spec).map((id, i) => {
+      // Zero price and no prompt-cache lifetime until a request was served:
+      // then the served model's (Pi's CacheWarmer reads both).
+      const economics = declaredEconomics.get(`${groupName}/${id}`) ?? UNDECLARED_CACHE_ECONOMICS;
+      return {
+        id,
+        name: names[i],
+        // A unique placeholder api name — never a real Api: the provider
+        // streams every request itself, the value only has to be distinct
+        // per group.
+        api: `router-group-${groupName}` as Api,
+        provider: groupName,
+        baseUrl: 'https://router.local', // not used — the provider streams itself
+        reasoning: true,
+        input: ['text', 'image'] as ('text' | 'image')[],
+        cost: economics.cost,
+        ...(economics.promptCache ? { promptCache: economics.promptCache } : {}),
+        contextWindow: spec.contextWindow,
+        maxTokens: 64_000,
+      };
     });
+  }
+
+  /**
+   * A group provider is the dispatch layer behind the `router/dynamic`
+   * virtual model (plan docs/plans/2026-11-21-virtual-models-migration.md,
+   * step 2). A native pi-ai provider: its models stay in Pi's catalog
+   * (`getModel`: route()'s target, `--model`, delegation), `filterModels`
+   * keeps them out of the availability list (`/model`, scoped models). It
+   * reads its spec live, so it is registered once: every re-registration
+   * shows the hidden models in Pi's availability snapshot until the queued
+   * refresh lands (spike condition G1b,
+   * docs/research/2026-11-21-router-shape-spike.md).
+   */
+  function registerGroupProvider(groupName: string, spec: GroupProviderSpec): void {
     groupSpecs.set(groupName, spec);
+    if (registeredGroupProviderNames.has(groupName)) return;
+    const stream = (
+      model: Model<Api>,
+      context: Context,
+      options?: SimpleStreamOptions
+    ): AssistantMessageEventStream => rt.groupStream(model, context, options);
+    const provider: Provider = {
+      id: groupName,
+      name: `Router group ${groupName}`,
+      auth: {
+        apiKey: {
+          name: 'Router group (no credential)',
+          // Always configured: the group streams through the members' own
+          // providers, which carry the real credentials.
+          resolve: () => Promise.resolve({ auth: {}, source: 'router' }),
+        },
+      },
+      getModels: () => {
+        const current = groupSpecs.get(groupName);
+        return current ? groupModels(groupName, current) : [];
+      },
+      filterModels: () => [],
+      stream: stream as Provider['stream'],
+      streamSimple: stream,
+    };
+    rt.pi.registerProvider(provider);
     registeredGroupProviderNames.add(groupName);
   }
 
@@ -204,7 +245,6 @@ export function createGroupRegistration(rt: GroupRegistrationDeps): GroupRegistr
     routerLog(
       `[cache-warm] ${key} declares ${economics.promptCache ? 'a prompt-cache lifetime' : 'no prompt-cache lifetime'} for Pi's cache warming`
     );
-    registerGroupProvider(groupName, spec);
   }
 
   /**
@@ -491,5 +531,10 @@ export function createGroupRegistration(rt: GroupRegistrationDeps): GroupRegistr
     registerGroupProviders();
   }
 
-  return { registerGroupProviders, registerGroupModels, declareCacheEconomics };
+  /** The window a registered group model carries, or undefined. */
+  function groupContextWindow(groupName: string): number | undefined {
+    return groupSpecs.get(groupName)?.contextWindow;
+  }
+
+  return { registerGroupProviders, registerGroupModels, declareCacheEconomics, groupContextWindow };
 }

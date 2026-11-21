@@ -10,6 +10,7 @@ import { existsSync, renameSync } from 'node:fs';
 import { join } from 'node:path';
 import { vi } from 'vitest';
 import { flushBackgroundScan } from './noop-scan-cache.ts';
+import { providerCall } from './provider-calls.ts';
 
 export type EventHandlers = Record<string, (ev: any, ctx: any) => any>;
 
@@ -31,6 +32,7 @@ export function makeExtensionContext(): ExtensionContextHarness {
   const ctx: any = {
     registerTool: vi.fn(),
     registerCommand: vi.fn(),
+    registerVirtualModel: vi.fn(),
     registerProvider: vi.fn(),
     setModel: vi.fn(async () => true),
     on: vi.fn((event: string, handler: (ev: any, ctx: any) => any) => {
@@ -83,8 +85,9 @@ export function makeObservableExtensionContext(): ObservableExtensionContext {
   const ctx: any = {
     registerTool: vi.fn(),
     registerCommand: vi.fn(),
-    registerProvider: vi.fn((name: string, opts: any) => {
-      registerProviderCalls.push({ name, opts });
+    registerVirtualModel: vi.fn(),
+    registerProvider: vi.fn((name: any, opts?: any) => {
+      registerProviderCalls.push(providerCall(name, opts));
     }),
     setModel: vi.fn(async () => true),
     on: vi.fn((event: string, handler: (ev: any, ctx: any) => any) => {
@@ -206,6 +209,7 @@ export function makePiCtx(overrides: PiCtxOverrides = {}): {
   const pi: any = {
     registerTool: overrides.registerTool ?? vi.fn(),
     registerCommand: overrides.registerCommand ?? vi.fn(),
+    registerVirtualModel: vi.fn(),
     registerProvider: overrides.registerProvider ?? vi.fn(),
     setModel: overrides.setModel ?? vi.fn(async () => true),
     on: vi.fn((event: string, handler: (ev: any, ctx: any) => any) => {
