@@ -24,7 +24,7 @@ spikes/virtual-models/run-retry-matrix.sh        # §1, ~4 min
 The other probes are run by hand (start `fake-server.mjs` first, `SPIKE_OUT`
 must exist); the commands are in the research note.
 
-## Baseline (Pi 1.5.0, 2026-11-06; re-verified 2026-11-07)
+## Baseline (Pi 1.5.0, 2026-11-06; re-verified 2026-11-07 and on Pi 1.6.0 2026-11-21: all seven rows unchanged)
 
 | case | `route()` calls | answer |
 |---|---|---|

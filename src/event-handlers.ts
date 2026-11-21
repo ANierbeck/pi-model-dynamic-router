@@ -10,6 +10,7 @@
  * Pure code motion.
  */
 
+import { groupToRestore } from './session-restore.ts';
 import { resolveReadBlockStreamRef, checkReadBlock } from './bulk-read.ts';
 import { costTracker } from './cost-tracker.ts';
 import { handleReadDelegation } from './delegation.ts';
@@ -121,6 +122,41 @@ function inSessionOf<E, R>(
   return (ev, ctx) => runInSession(sessionIdOf(ctx), () => handler(ev, ctx));
 }
 
+/**
+ * `pi --continue` / `/resume` / `/fork` on a router session: Pi restores the
+ * physical model that answered last instead of the group (a `model_change`
+ * only outlives later replies for Pi virtual models). Select the group again
+ * (docs/plans/2026-11-21-continue-restores-group.md). Runs after the group
+ * models are registered, so the registry knows the group model.
+ */
+function restoreGroupSelection(rt: EventHandlerDeps, ctx: ExtensionContext): void {
+  // Only a session with a UI (TUI/RPC). pi-subagents starts forked children
+  // headless with reason 'startup' and a copy of the parent's branch; a child
+  // given exactly the model that answered the parent last would look like
+  // Pi's fallback, and its explicit model must win.
+  if (ctx.hasUI !== true) return;
+  const groupNames = new Set(Object.keys(rt.cfg.model_groups ?? {}));
+  const target = groupToRestore(ctx.sessionManager?.getBranch?.() ?? [], ctx.model, groupNames);
+  if (!target) return;
+  const model = ctx.modelRegistry.find(target.provider, target.modelId);
+  if (!model) return;
+  const ref = `${target.provider}/${target.modelId}`;
+  rt.pi
+    .setModel(model)
+    .then((ok) => {
+      if (ok)
+        routerLog(
+          `[router] resumed session: selected ${ref} again (Pi restored ${ctx.model?.provider}/${ctx.model?.id})`
+        );
+      else warnLog(`[router] resumed session: could not select ${ref} again`);
+    })
+    .catch((err: unknown) =>
+      warnLog(
+        `[router] resumed session: selecting ${ref} failed: ${err instanceof Error ? err.message : textOf(err)}`
+      )
+    );
+}
+
 export function createEventHandlers(rt: EventHandlerDeps): void {
   rt.pi.on(
     'session_start',
@@ -204,6 +240,7 @@ export function createEventHandlers(rt: EventHandlerDeps): void {
       rt.escalation.reset();
 
       rt.registerGroupModels(ctx);
+      restoreGroupSelection(rt, ctx);
       // scan() swallows per-provider failures by design, but a top-level
       // throw (e.g. from checkScanSanity or saveCache) must not disappear
       // silently (final v1.6.0 review minor #6).

@@ -409,6 +409,14 @@ All scanning is async and non-blocking.
 
 ### Group Selection
 
+**Resumed sessions keep their group.** After `pi --continue`, `/resume` or
+`/fork`, Pi would restore the concrete model that answered last (it only keeps
+a selection of its own *virtual* models across later replies). When the branch
+selected a router group and no other model was chosen since, the router selects
+that group again at session start. A deliberate `/model` switch to a concrete
+model is kept. Not restored: print mode (`pi -p --continue`), and an explicit
+`--model` that names exactly the model that answered last.
+
 Each group auto-discovers available models, filters by quality, and selects
 by billing preference. The shipped groups (see `router-config.json`):
 
