@@ -11,6 +11,12 @@ without the owner's explicit release approval).
 
 ### Added
 
+- **`worker_step` tool** (plan `docs/plans/2026-11-21-long-turn-model-use.md`,
+  Phase 2): hand one fully specified mechanical task to the cheap delegation
+  group as a text-only sub-call. Measured need: 83 % of steps in long turns
+  (50+ steps) are mechanical and hold 52 % of all tokens
+  (`docs/research/2026-11-21-long-turn-profile.md`).
+
 - **`/router fresh` waits for the running turn** (plan
   `docs/plans/2026-11-21-busy-session-fresh.md`): instead of aborting the turn
   it was typed into, the command waits up to three times and then interrupts

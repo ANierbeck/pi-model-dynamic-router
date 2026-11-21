@@ -1,7 +1,8 @@
 # Model use in long agentic turns
 
-**Status:** in progress — 2026-11-21. Owner decision: do all phases.
-Phase 0 done (`docs/research/2026-11-21-long-turn-profile.md`).
+**Status:** done — 2026-11-21. Owner decision: do all phases. Phase 0
+measured (`docs/research/2026-11-21-long-turn-profile.md`), Phase 1
+measured-no-change, Phase 2 shipped as the `worker_step` tool.
 
 **Verified against:** `origin/main` @ `03274c1`: `src/delegation.ts`
 (`DEFAULTS`, `handleReadDelegation`), `src/bulk-read.ts` (the block message at
@@ -39,13 +40,20 @@ the expensive groups (`router-config.json:150–156`).
   Output: `docs/research/2026-11-21-long-turn-profile.md`. First check whether
   the decision log records individual tool steps at all. If it does not, the
   minimal logging change is part of Phase 0 and follows red-first.
-- **Phase 1 — widen delegation, only as far as Phase 0 shows.** Candidates:
-  shell output above `min_chars`, a wider `tools` list. Each change is a
-  config or code change with its own red test.
-- **Phase 2 — a worker step (owner decision).** A tool the expensive model
-  calls to hand a fully specified mechanical task to the cheap group. The
-  result returns into the turn, as `handleReadDelegation` already does for
-  reads. This adds a tool surface, so it needs the owner's go.
+- [x] **Phase 1 — widen delegation. Measured, no change warranted**
+  (2026-11-21). `read` and `bash` are already in `tools`, and 95 % of the
+  large bash output in long turns is piped/grep (the shunt exemption).
+  Shrinking ALL big bash results would bound the saving at 5.6 % of context
+  re-reads in long turns; capping only the exempt results above 12k chars
+  would touch 35 of 890 results. Below ~3.5k chars the delegation latency
+  exceeds the saving (shunt rationale). Numbers:
+  `docs/research/2026-11-21-long-turn-profile.md`.
+- [x] **Phase 2 — worker step, implemented 2026-11-21** (owner go: "do all
+  phases"). New tool `worker_step` (`src/worker-step.ts`): one fully
+  specified mechanical task per call, answered by the configured delegation
+  group as a text-only sub-call (sub-call scope, so the turn model is
+  unaffected). The worker has no tools, so the task must carry all material.
+  Fails closed when delegation is off.
 - **Rejected:** a mid-turn switch of the main model (see the research note).
 - **Standing rule (AGENTS.md §13, added with this plan).** The expensive model
   plans, decides and judges (design, review, final verification). Mechanical
@@ -56,7 +64,6 @@ the expensive groups (`router-config.json:150–156`).
 
 1. **Phase 0 data source.** Does the decision log cover tool steps, or does
    Phase 0 need a logging change first? Decided by the first Phase 0 step.
-2. **Phase 2 tool.** Authorise a worker tool at all? Recommended: decide after
-   the Phase 0 profile, not before.
+2. **Phase 2 tool.** Decided 2026-11-21: yes, shipped as `worker_step`.
 3. **Which group is the worker.** Derived from `delegation.group` (no model is
    named in code, ADR-0025). Confirm that the default is the right cheap group.
