@@ -10,7 +10,7 @@
 
 import { describe, it, expect } from 'vitest';
 import { VALID_CATEGORIES, CLASSIFICATION_PROMPT } from '../src/classification-prompt.ts';
-import { CATEGORY_TO_GROUP, classifyStatically } from '../src/content-classifier.ts';
+import { CATEGORY_TO_GROUP } from '../src/content-classifier.ts';
 
 const SEVEN = [
   'simple',
@@ -47,20 +47,6 @@ describe('v2 taxonomy: category → group mapping', () => {
     expect(CATEGORY_TO_GROUP.code_complex).toBe('code_complex');
     expect(CATEGORY_TO_GROUP.design).toBe('design');
     expect(CATEGORY_TO_GROUP.planning).toBe('planning');
-  });
-});
-
-describe('v2 taxonomy: static keyword classifier', () => {
-  it('a "what is in this file" lookup is simple (was trivial)', () => {
-    expect(classifyStatically("what's in this file?").category).toBe('simple');
-  });
-
-  it('open-ended brainstorming is standard (was exploration)', () => {
-    expect(classifyStatically('brainstorm some ideas for the router').category).toBe('standard');
-  });
-
-  it('an unclassifiable prompt is continue (was fallback)', () => {
-    expect(classifyStatically('zzz qqq').category).toBe('continue');
   });
 });
 

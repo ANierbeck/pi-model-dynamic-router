@@ -32,7 +32,7 @@ describe('classifyPrompt: LLM result caching (LRU + TTL)', () => {
 
   it('returns the cached result on the second identical prompt without calling the LLM again', async () => {
     const prompt = 'Refactor the router module into smaller files and add tests';
-    const opts = { allowStaticFallback: true, cache: localModelCache() } as any;
+    const opts = { cache: localModelCache() } as any;
 
     const r1 = await classifyPrompt(prompt, opts);
     const r2 = await classifyPrompt(prompt, opts);
@@ -47,7 +47,6 @@ describe('classifyPrompt: LLM result caching (LRU + TTL)', () => {
   it('does NOT cache when conversation context is present (avoids stale hits across different contexts)', async () => {
     const prompt = 'Do the thing now please and make it good for the project';
     const optsWithContext = {
-      allowStaticFallback: true,
       cache: localModelCache(),
       context: { previousUserMessage: 'previous', lastAssistantSnippet: 'snippet' },
     } as any;
@@ -127,7 +126,7 @@ describe('classifyPrompt: HINT category form', () => {
     (cache as any).hint_corrections = {
       [CONTENT]: { hintType: 'category', target: 'roadmap', savedAt: LONG_AGO },
     };
-    const r = await classifyPrompt(CONTENT, { cache, allowStaticFallback: true } as any);
+    const r = await classifyPrompt(CONTENT, { cache } as any);
     expect(vi.mocked(ollamaUtils.callOllama)).toHaveBeenCalledTimes(1);
     expect(r.category).toBe('code_complex');
     expect(vi.mocked(logger.warnLog)).toHaveBeenCalledWith(staleCorrectionMessage('roadmap'));
@@ -140,7 +139,6 @@ describe('classifyPrompt: HINT category form', () => {
     const r = await classifyPrompt(`HINT: category roadmap ${OTHER}`, {
       cache,
       persistCache,
-      allowStaticFallback: true,
     } as any);
     expect(vi.mocked(ollamaUtils.callOllama)).toHaveBeenCalledTimes(1);
     expect(r.category).toBe('code_complex');
@@ -157,7 +155,6 @@ describe("saved corrections never override the router's own decisions", () => {
     };
     const r = await classifyPrompt(CONTENT, {
       cache,
-      allowStaticFallback: true,
       context: { isCompaction: true },
     } as any);
     expect(r.reason).not.toMatch(/Saved HINT correction/);
@@ -167,7 +164,6 @@ describe("saved corrections never override the router's own decisions", () => {
     vi.mocked(ollamaUtils.callOllama).mockClear();
     await classifyPrompt(`HINT: category roadmap ${THIRD}`, {
       cache: localModelCache(),
-      allowStaticFallback: true,
     } as any);
     const sent = JSON.stringify(vi.mocked(ollamaUtils.callOllama).mock.calls);
     expect(sent).toContain(THIRD);
@@ -180,7 +176,6 @@ describe('a correction notice reaches the user, not only the log (ADR-0030)', ()
     const notify = vi.fn();
     await classifyPrompt(`HINT: category roadmap ${THIRD}`, {
       cache: localModelCache(),
-      allowStaticFallback: true,
       notify,
     } as any);
     expect(notify).toHaveBeenCalledWith(unknownCategoryMessage('roadmap'));
@@ -192,7 +187,7 @@ describe('a correction notice reaches the user, not only the log (ADR-0030)', ()
     cache.hint_corrections = {
       [CONTENT]: { hintType: 'category', target: 'roadmap', savedAt: LONG_AGO },
     };
-    await classifyPrompt(CONTENT, { cache, allowStaticFallback: true, notify } as any);
+    await classifyPrompt(CONTENT, { cache, notify } as any);
     expect(notify).toHaveBeenCalledWith(staleCorrectionMessage('roadmap'));
   });
 });
@@ -206,7 +201,6 @@ describe('an unknown category name with NO content behind the head (ADR-0030 rev
     const notify = vi.fn();
     const r = await classifyPrompt('HINT: category roadmap', {
       cache: localModelCache(),
-      allowStaticFallback: true,
       notify,
     } as any);
     // The marker never reached the LLM — nothing was sent at all.
@@ -230,7 +224,7 @@ describe('a saved correction beats the classify cache (ADR-0030 review precedenc
     const FOURTH = 'Write the end to end test for the new metrics export path';
     const cache = localModelCache();
     // 1. The LLM classifies the content — this fills the classify cache.
-    const r1 = await classifyPrompt(FOURTH, { cache, allowStaticFallback: true } as any);
+    const r1 = await classifyPrompt(FOURTH, { cache } as any);
     expect(r1.category).toBe('code_complex');
     expect(vi.mocked(ollamaUtils.callOllama)).toHaveBeenCalledTimes(1);
     // 2. The HINT form saves the correction for the same content.
@@ -239,7 +233,7 @@ describe('a saved correction beats the classify cache (ADR-0030 review precedenc
     expect(vi.mocked(ollamaUtils.callOllama)).toHaveBeenCalledTimes(1);
     // 3. Re-asking the same content without HINT: the correction decides —
     //    before the classify cache — and the LLM is not called again.
-    const r3 = await classifyPrompt(FOURTH, { cache, allowStaticFallback: true } as any);
+    const r3 = await classifyPrompt(FOURTH, { cache } as any);
     expect(r3.category).toBe('planning');
     expect(r3.reason).toMatch(/Saved HINT correction/);
     expect(vi.mocked(ollamaUtils.callOllama)).toHaveBeenCalledTimes(1);
@@ -255,7 +249,6 @@ describe('a correction to continue resolves through the continue-inheritance (AD
     };
     const r = await classifyPrompt(FIFTH, {
       cache,
-      allowStaticFallback: true,
       context: { lastCategory: 'code_complex' },
     } as any);
     // No classifier call: the saved correction decided.

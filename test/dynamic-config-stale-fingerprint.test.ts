@@ -17,6 +17,7 @@ import path from 'node:path';
 import { staticExcludeFingerprint } from '../src/dynamic-config.ts';
 import { writeScanCacheFixture } from './helpers/noop-scan-cache.ts';
 import { rmTmpDir } from './helpers/router-env.ts';
+import { providerCall } from './helpers/provider-calls.ts';
 
 async function startRouter(existingDynamic: unknown) {
   const stateDir = process.env.PI_ROUTER_STATE_DIR!;
@@ -42,8 +43,9 @@ async function startRouter(existingDynamic: unknown) {
     (mod.default as any)({
       registerTool: vi.fn(),
       registerCommand: vi.fn(),
-      registerProvider: vi.fn((id: string) => {
-        registeredProviders.push(id);
+      registerVirtualModel: vi.fn(),
+      registerProvider: vi.fn((id: any, opts?: any) => {
+        registeredProviders.push(providerCall(id, opts).name);
       }),
       setModel: vi.fn(async () => true),
       on: vi.fn((event: string, handler: any) => {

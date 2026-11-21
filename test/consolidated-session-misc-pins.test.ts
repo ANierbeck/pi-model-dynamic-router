@@ -188,6 +188,7 @@ describe('session-errors-single-record', () => {
         const pi: any = {
           registerTool: vi.fn(),
           registerCommand: vi.fn(),
+          registerVirtualModel: vi.fn(),
           registerProvider: vi.fn(),
           setModel: vi.fn(async () => true),
           on: vi.fn((event: string, handler: any) => {
@@ -320,6 +321,7 @@ describe('session-errors-wiring', () => {
         const pi: any = {
           registerTool: vi.fn(),
           registerCommand: vi.fn(),
+          registerVirtualModel: vi.fn(),
           registerProvider: vi.fn(),
           setModel: vi.fn(async () => true),
           on: vi.fn((event: string, handler: any) => {

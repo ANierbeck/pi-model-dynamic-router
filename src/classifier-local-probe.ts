@@ -24,7 +24,7 @@
 //      classifier.local.fallback in the classifier block, optional) › probed list ›
 //      provisional (the candidate order itself, before the first probe) ›
 //      nothing (the local leg is skipped; the chain continues with cloud and
-//      the static classifier).
+//      the fallback applies).
 
 import type { ClassifierConfig } from './types.ts';
 import type { Cache, Config } from './types.ts';

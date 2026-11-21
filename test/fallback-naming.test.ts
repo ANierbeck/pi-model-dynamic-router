@@ -4,8 +4,8 @@
 // The word "fallback" named six different things. The owner's test (2026-10-26):
 // "fallback" must mean *everything I tried failed, now something else". Where a
 // name says exactly that it stays (stream retry, failure cascade
-// `fallback_groups`, the local second classifier, the static classifier, the
-// decision-log stage `fallback`). Where it does not, it was renamed:
+// `fallback_groups`, the local second classifier, the decision-log stage
+// `fallback`). Where it does not, it was renamed:
 //
 //   - the classifier's cloud chain (`classifier_cloud_chain`, `allowCloudChain`,
 //     `callCloudChain`, `classifier-cloud-probe.ts`, `classifier_cloud_models`)
@@ -116,11 +116,10 @@ describe('fallback naming — a new "fallback" identifier needs a stated meaning
     'fallbackGroup',
     'fallbackGroups',
     'fallbackGroupsFor',
-    // C — the local second classifier and the static classifier
+    // C — the local second classifier
     'classifier_fallback',
     'fallbackModel',
     'fallbackTimeoutMs',
-    'allowStaticFallback',
     'fallbackModels',
     'fallbackModelRef',
     'pinnedFallbackModel',

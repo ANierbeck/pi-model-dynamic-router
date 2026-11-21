@@ -46,6 +46,7 @@ import {
   makePiCtx,
 } from './helpers/extension-harness.ts';
 import { withRouterEnv } from './helpers/router-env.ts';
+import { providerCall } from './helpers/provider-calls.ts';
 
 const { dynamicConfigPath, scanCachePath } = routerStatePaths();
 
@@ -129,8 +130,9 @@ describe('ADR-0021: the router never registers models Pi does not know', () => {
       async (defaultExport, tmpDir) => {
         const registerProviderCalls: any[] = [];
         const { pi, onHandlers } = makePiCtx({
-          registerProvider: vi.fn((name: string, opts: any) => {
-            registerProviderCalls.push({ name, opts });
+          registerVirtualModel: vi.fn(),
+          registerProvider: vi.fn((name: any, opts?: any) => {
+            registerProviderCalls.push(providerCall(name, opts));
           }),
         });
         defaultExport(pi);

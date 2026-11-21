@@ -30,6 +30,7 @@ import { normalizeModelId } from './slug-matcher.ts';
 import { isExcluded, globMatcher } from './exclude.ts';
 import { isAgentCapableRef } from './agent-capability.ts';
 import { isBlocked } from './model-blocklist.ts';
+import { VIRTUAL_PROVIDER, VIRTUAL_MODEL_ID } from './virtual-selection.ts';
 import { demoteUnhealthy, isUnhealthy } from './model-health.ts';
 import { isDebugEnabled, debugLogOnce } from './logger.ts';
 import { filterByBudget } from './budget.ts';
@@ -468,7 +469,7 @@ export function getFallbackGroup(
 
 /**
  * Is `ref` one of the router's own virtual group-provider models (e.g.
- * 'trivial/trivial', 'dynamic/dynamic', 'dynamic/dynamic:use-static')?
+ * 'trivial/trivial', 'dynamic/dynamic')?
  * registerGroupProviders() registers one per group so Pi's model picker /
  * --model flag can select a group as the active model. These virtual models
  * have no GDPval and no cost of their own — the price a group model declares
@@ -477,14 +478,17 @@ export function getFallbackGroup(
  * both as resolution candidates (allDiscoveredRefs) and from cost
  * diagnostics (the "unknown cost" scan log), where they would otherwise
  * pollute the list with routing artefacts the user can neither price nor
- * exclude.
+ * exclude. The `router/dynamic` virtual selection model counts too: Pi lists
+ * it as available, and routing a turn to it would recurse into the router's
+ * own route() (docs/plans/2026-11-21-virtual-models-migration.md, step 2).
  */
 export function isVirtualGroupRef(ref: string, groupNames: ReadonlySet<string>): boolean {
   const slash = ref.indexOf('/');
   if (slash === -1) return false;
   const provider = ref.slice(0, slash);
   const modelId = ref.slice(slash + 1);
-  return groupNames.has(provider) && (modelId === provider || modelId === `${provider}:use-static`);
+  if (provider === VIRTUAL_PROVIDER && modelId === VIRTUAL_MODEL_ID) return true;
+  return groupNames.has(provider) && modelId === provider;
 }
 
 // ── Routing Logic ─────────────────────────────────────────────────────────
@@ -665,7 +669,7 @@ export class Router {
     }
 
     // Exclude the router's own virtual group-provider models (e.g.
-    // 'trivial/trivial', 'dynamic/dynamic', 'dynamic/dynamic:use-static').
+    // 'trivial/trivial', 'dynamic/dynamic').
     // registerGroupProviders() registers one of these per group so Pi's
     // model picker / --model flag can select a group as the active model
     // (README: "You select `dynamic` group"). Pi's registry surfaces them

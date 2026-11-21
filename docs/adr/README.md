@@ -64,3 +64,4 @@ Each ADR is a numbered file: `NNNN-title-in-kebab-case.md`, containing:
 - [0034 — One config surface: a classifier block, a key table, validated writes, a generated reference (accepted)](0034-config-surface.md)
 - [0035 — An installed Laya leads the classifier chain; without it the standard chain runs (accepted)](0035-installed-laya-leads.md)
 - [0036 — Laya has no confidence gate by default (accepted)](0036-laya-no-confidence-gate.md)
+- [0037 — Drop the `<group>:use-static` variant and the keyword static classifier (accepted)](0037-drop-static-classifier-and-use-static-variant.md)

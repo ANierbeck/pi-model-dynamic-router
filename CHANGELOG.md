@@ -43,6 +43,11 @@ without the owner's explicit release approval).
 
 ### Changed
 
+- **The `<group>:use-static` variant and the keyword static classifier are
+  gone** (ADR 0037). When every classifier hop fails, the answer is the
+  `continue` category (`no classifier answered`), which is what a plain group
+  already got. A session on a `<group>:use-static` model migrates to
+  `router/dynamic` on its next start.
 - **Host alignment to pi 1.6.0** (devDependencies `^1.5.2` → `^1.6.0` for
   `pi-coding-agent`, `pi-ai`, `pi-tui`). The user's pi self-updated to 1.6.0,
   so the test suite now runs against the host that actually loads the router.

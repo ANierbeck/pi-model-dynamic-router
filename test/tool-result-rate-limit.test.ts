@@ -60,6 +60,7 @@ async function bootToolResultHarness() {
   const pi: any = {
     registerTool: vi.fn(),
     registerCommand: vi.fn(),
+    registerVirtualModel: vi.fn(),
     registerProvider: vi.fn(),
     setModel: vi.fn(async () => true),
     on: vi.fn((event: string, handler: any) => {

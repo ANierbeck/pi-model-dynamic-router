@@ -8,7 +8,7 @@
 // and no request is routed any more. The router puts the group back.
 import { describe, it, expect, vi } from 'vitest';
 
-import { groupToRestore } from '../src/session-restore.ts';
+import { groupSelectionToMigrate, legacyGroupToRestore } from '../src/legacy-session-restore.ts';
 import { makeObservableExtensionContext, makeSessionCtx } from './helpers/extension-harness.ts';
 import { flushBackgroundScan } from './helpers/noop-scan-cache.ts';
 import { paidCloudModel } from './helpers/stream-fixtures.ts';
@@ -22,13 +22,15 @@ vi.mock('../src/classifier-decision-log.ts', async (importOriginal) => {
   return { ...actual, writeOutcomeRecord };
 });
 const routerLog = vi.hoisted(() => vi.fn());
+const warnLog = vi.hoisted(() => vi.fn());
 vi.mock('../src/logger.ts', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../src/logger.ts')>();
-  return { ...actual, routerLog };
+  return { ...actual, routerLog, warnLog };
 });
 
 const GROUPS: ReadonlySet<string> = new Set(['dynamic', 'planning']);
 const PHYSICAL = { provider: 'paid-cloud-provider', id: 'paid-model' };
+const SID = 'resume-session';
 
 const modelChange = (provider: string, modelId: string): any => ({
   type: 'model_change',
@@ -50,7 +52,7 @@ const routedBranch = (): any[] => [
 
 describe('groupToRestore — when Pi fell back to the last responder', () => {
   it('restores the group the branch selected', () => {
-    expect(groupToRestore(routedBranch(), PHYSICAL, GROUPS)).toEqual({
+    expect(legacyGroupToRestore(routedBranch(), PHYSICAL, GROUPS)).toEqual({
       provider: 'dynamic',
       modelId: 'dynamic',
     });
@@ -58,7 +60,7 @@ describe('groupToRestore — when Pi fell back to the last responder', () => {
 
   it('restores the static variant of a dynamic group', () => {
     const branch = [modelChange('dynamic', 'dynamic:use-static'), ...routedBranch().slice(1)];
-    expect(groupToRestore(branch, PHYSICAL, GROUPS)).toEqual({
+    expect(legacyGroupToRestore(branch, PHYSICAL, GROUPS)).toEqual({
       provider: 'dynamic',
       modelId: 'dynamic:use-static',
     });
@@ -69,7 +71,9 @@ describe('groupToRestore — when Pi fell back to the last responder', () => {
   // aborted or failed message unchanged, so Pi restores THAT model.
   it('an aborted last reply on another model is still Pi’s fallback', () => {
     const branch = [...routedBranch(), userMsg(), reply('other-provider', 'other', 'aborted')];
-    expect(groupToRestore(branch, { provider: 'other-provider', id: 'other' }, GROUPS)).toEqual({
+    expect(
+      legacyGroupToRestore(branch, { provider: 'other-provider', id: 'other' }, GROUPS)
+    ).toEqual({
       provider: 'dynamic',
       modelId: 'dynamic',
     });
@@ -78,7 +82,7 @@ describe('groupToRestore — when Pi fell back to the last responder', () => {
   it('a failed physical last reply is still Pi’s fallback', () => {
     const branch = [...routedBranch(), userMsg(), reply('other-provider', 'other', 'error')];
     expect(
-      groupToRestore(branch, { provider: 'other-provider', id: 'other' }, GROUPS)
+      legacyGroupToRestore(branch, { provider: 'other-provider', id: 'other' }, GROUPS)
     ).not.toBeNull();
   });
 
@@ -93,19 +97,23 @@ describe('groupToRestore — when Pi fell back to the last responder', () => {
         stopReason: 'error',
       },
     };
-    expect(groupToRestore([...routedBranch(), virtualReply], PHYSICAL, GROUPS)).not.toBeNull();
+    expect(
+      legacyGroupToRestore([...routedBranch(), virtualReply], PHYSICAL, GROUPS)
+    ).not.toBeNull();
   });
 });
 
 describe('groupToRestore — leaves every other start alone', () => {
   it('a deliberate /model switch to a concrete model is respected', () => {
     const branch = [...routedBranch(), modelChange('paid-cloud-provider', 'paid-model')];
-    expect(groupToRestore(branch, PHYSICAL, GROUPS)).toBeNull();
+    expect(legacyGroupToRestore(branch, PHYSICAL, GROUPS)).toBeNull();
   });
 
-  it('a session already on its group (reload) is a no-op', () => {
+  // No fallback to undo here; groupSelectionToMigrate (below) still moves
+  // such a session to router/dynamic (review 2026-11-21, Important 1).
+  it('a session already on its group is no fallback', () => {
     expect(
-      groupToRestore(routedBranch(), { provider: 'dynamic', id: 'dynamic' }, GROUPS)
+      legacyGroupToRestore(routedBranch(), { provider: 'dynamic', id: 'dynamic' }, GROUPS)
     ).toBeNull();
   });
 
@@ -115,21 +123,49 @@ describe('groupToRestore — leaves every other start alone', () => {
       userMsg(),
       reply('paid-cloud-provider', 'paid-model'),
     ];
-    expect(groupToRestore(branch, PHYSICAL, GROUPS)).toBeNull();
+    expect(legacyGroupToRestore(branch, PHYSICAL, GROUPS)).toBeNull();
   });
 
   it('a current model other than the last responder (an explicit --model) is a no-op', () => {
-    expect(groupToRestore(routedBranch(), { provider: 'x', id: 'y' }, GROUPS)).toBeNull();
+    expect(legacyGroupToRestore(routedBranch(), { provider: 'x', id: 'y' }, GROUPS)).toBeNull();
   });
 
   it('a new session (no history) and no model are no-ops', () => {
-    expect(groupToRestore([], PHYSICAL, GROUPS)).toBeNull();
-    expect(groupToRestore(routedBranch(), undefined, GROUPS)).toBeNull();
+    expect(legacyGroupToRestore([], PHYSICAL, GROUPS)).toBeNull();
+    expect(legacyGroupToRestore(routedBranch(), undefined, GROUPS)).toBeNull();
   });
 
   it('a group the config no longer has is not restored', () => {
     const branch = [modelChange('retired', 'retired'), ...routedBranch().slice(1)];
-    expect(groupToRestore(branch, PHYSICAL, GROUPS)).toBeNull();
+    expect(legacyGroupToRestore(branch, PHYSICAL, GROUPS)).toBeNull();
+  });
+});
+
+// Review 2026-11-21 (Important 1): Pi resolves the settings default and
+// `--model` through the unfiltered catalog, so a session can START on a
+// hidden group model; it moves to router/dynamic like a fallen-back one.
+describe('groupSelectionToMigrate', () => {
+  it('a session on a group model migrates, whatever the branch says', () => {
+    expect(groupSelectionToMigrate([], { provider: 'dynamic', id: 'dynamic' }, GROUPS)).toEqual({
+      provider: 'dynamic',
+      modelId: 'dynamic',
+    });
+    expect(
+      groupSelectionToMigrate(routedBranch(), { provider: 'planning', id: 'planning' }, GROUPS)
+    ).toEqual({ provider: 'planning', modelId: 'planning' });
+  });
+
+  it('a fallen-back pre-migration branch migrates its group', () => {
+    expect(groupSelectionToMigrate(routedBranch(), PHYSICAL, GROUPS)).toEqual({
+      provider: 'dynamic',
+      modelId: 'dynamic',
+    });
+  });
+
+  it('a concrete model chosen on purpose stays', () => {
+    const branch = [...routedBranch(), modelChange('paid-cloud-provider', 'paid-model')];
+    expect(groupSelectionToMigrate(branch, PHYSICAL, GROUPS)).toBeNull();
+    expect(groupSelectionToMigrate([], undefined, GROUPS)).toBeNull();
   });
 });
 
@@ -139,26 +175,35 @@ describe('session_start wiring', () => {
     setThinkingLevel: ReturnType<typeof vi.fn>;
     /** Whether the session_start handler returned only after the switch. */
     awaitedSwitch: boolean;
+    /**
+     * The first request after the start, when the session ended up on
+     * router/dynamic: route()'s result (the group model and branch state).
+     */
+    routed: { model: { provider: string; id: string }; state?: unknown } | undefined;
   }
 
   async function resume(
     branch: any[],
     current: any,
     hasUI = true,
-    thinkingAfterSwitch = 'off'
+    thinkingAfterSwitch = 'off',
+    setModelResult = true
   ): Promise<Resumed> {
     const out = {} as Resumed;
     await withRouterEnv(
       async (defaultExport, tmpDir) => {
         writeOutcomeRecord.mockClear();
         routerLog.mockClear();
+        warnLog.mockClear();
         const { ctx: pi, onHandlers } = makeObservableExtensionContext();
         let switched = false;
         let liveModel = current;
         // Pi's setModel: auth check first (async), then the switch, then the
-        // model_select event (source "set") the router also listens to.
+        // model_select event (source "set") the router also listens to. It
+        // routes nothing: route() runs with the next request.
         pi.setModel = vi.fn(async (model: any) => {
           await new Promise((r) => setTimeout(r, 5));
+          if (!setModelResult) return false;
           liveModel = model;
           switched = true;
           await onHandlers['model_select']?.({ type: 'model_select', model, source: 'set' }, ctx);
@@ -173,11 +218,13 @@ describe('session_start wiring', () => {
         const modelRegistry = {
           getAvailable: () => [physical],
           find: (provider: string, id: string) =>
-            provider === 'dynamic'
-              ? { provider, id, api: 'router-group-dynamic' }
-              : provider === physical.provider && id === physical.id
-                ? physical
-                : undefined,
+            provider === 'router' && id === 'dynamic'
+              ? { provider, id, api: 'pi-virtual' }
+              : GROUPS.has(provider) && (id === provider || id === `${provider}:use-static`)
+                ? { provider, id, api: `router-group-${provider}` }
+                : provider === physical.provider && id === physical.id
+                  ? physical
+                  : undefined,
           getApiKeyForProvider: async () => null,
           getRegisteredProviderIds: () => [],
         };
@@ -187,15 +234,41 @@ describe('session_start wiring', () => {
             return liveModel;
           },
           hasUI,
-          sessionManager: { getBranch: () => branch, getEntries: () => branch },
+          sessionManager: {
+            getSessionId: () => SID,
+            getBranch: () => branch,
+            getEntries: () => branch,
+          },
         };
         await onHandlers['session_start']?.({ reason: 'startup' }, ctx);
         out.awaitedSwitch = switched;
+        // A failed switch: the user selects router/dynamic later by hand.
+        if (liveModel?.api === 'pi-virtual' || !setModelResult) {
+          // The first prompt on router/dynamic: Pi routes it through the
+          // virtual model with the branch state (none yet on an old branch).
+          const def = (pi.registerVirtualModel as ReturnType<typeof vi.fn>).mock.calls[0][0];
+          const stored = [...branch]
+            .reverse()
+            .find((e) => e?.type === 'custom' && e.customType === 'pi.virtual-model-state');
+          out.routed = await def.route(
+            {
+              reason: 'user',
+              messages: [],
+              thinkingLevel: 'off',
+              model: liveModel,
+              ...(stored ? { state: stored.data.state } : {}),
+            },
+            ctx
+          );
+        }
         await flushBackgroundScan();
       },
       {
         config: {
-          model_groups: { dynamic: { method: 'dynamic' } },
+          model_groups: {
+            dynamic: { method: 'dynamic' },
+            planning: { models: ['paid-cloud-provider/paid-model'] },
+          },
           classifier: { log: { enabled: true, store_text: 'none' } },
         },
         disableNetwork: true,
@@ -204,15 +277,15 @@ describe('session_start wiring', () => {
     return out;
   }
 
-  it('pi --continue on a routed session switches back to the group', async () => {
+  it('pi --continue on a routed session re-selects router/dynamic', async () => {
     const { setModel } = await resume(routedBranch(), paidCloudModel());
     expect(setModel).toHaveBeenCalledTimes(1);
-    expect(setModel.mock.calls[0][0]).toMatchObject({ provider: 'dynamic', id: 'dynamic' });
+    expect(setModel.mock.calls[0][0]).toMatchObject({ provider: 'router', id: 'dynamic' });
   }, 30000);
 
   // Review 2026-11-21 (Minor 3): Pi awaits what session_start returns; a
-  // prompt sent right after the start must already go to the group.
-  it('session_start returns only after the group is selected', async () => {
+  // prompt sent right after the start must already see the selection.
+  it('session_start returns only after the re-selection', async () => {
     const { awaitedSwitch } = await resume(routedBranch(), paidCloudModel());
     expect(awaitedSwitch).toBe(true);
   }, 30000);
@@ -240,13 +313,84 @@ describe('session_start wiring', () => {
   }, 30000);
 
   // Review 2026-11-21 (Minor 1): ctx.model is a live getter; the log names
-  // the model Pi restored, not the group selected afterwards.
-  it('the log line names the model Pi restored', async () => {
+  // the model Pi restored, not the re-selection afterwards.
+  it('the log line names the migrate source and the pinned group', async () => {
     await resume(routedBranch(), paidCloudModel());
     const line = routerLog.mock.calls
       .map((c) => String(c[0]))
       .find((l) => l.includes('resumed session'));
+    expect(line).toContain('pre-migration selection dynamic/dynamic');
     expect(line).toContain('Pi restored paid-cloud-provider/paid-model');
+  }, 30000);
+
+  // Review 2026-11-21 (Important 5): an old branch on a non-classifying
+  // group keeps that group — the first route() after the start serves it
+  // and stores it as the branch's pin.
+  it('an old planning branch is served by planning and pinned', async () => {
+    const branch = [modelChange('planning', 'planning'), ...routedBranch().slice(1)];
+    const { setModel, routed } = await resume(branch, paidCloudModel());
+    expect(setModel).toHaveBeenCalledTimes(1);
+    expect(routed?.model).toMatchObject({ provider: 'planning', id: 'planning' });
+    expect(routed?.state).toEqual({ pin: 'planning' });
+  }, 30000);
+
+  it('an old dynamic branch is classified, with no pin', async () => {
+    const { routed } = await resume(routedBranch(), paidCloudModel());
+    expect(routed?.model).toMatchObject({ provider: 'dynamic', id: 'dynamic' });
+    // The migration hands over "no pin" explicitly (re-review Minor 3).
+    expect(routed?.state).toEqual({ pin: null });
+  }, 30000);
+
+  // Re-review 2026-11-21 (Minor 3): an explicit start on the classifying
+  // group releases a pin the branch stored earlier.
+  it('a start on the classifying group releases the branch’s stored pin', async () => {
+    const branch = [
+      ...routedBranch(),
+      {
+        type: 'custom',
+        customType: 'pi.virtual-model-state',
+        data: { provider: 'router', modelId: 'dynamic', state: { pin: 'planning' } },
+      },
+    ];
+    const onGroup = { provider: 'dynamic', id: 'dynamic', api: 'router-group-dynamic' };
+    const { routed } = await resume(branch, onGroup);
+    expect(routed?.model).toMatchObject({ provider: 'dynamic', id: 'dynamic' });
+    expect(routed?.state).toEqual({ pin: null });
+  }, 30000);
+
+  // Re-review 2026-11-21 (Minor 6): a fresh start on a group model is no
+  // resume of a pre-migration session; the log says what happened.
+  it('the log line of a start on a group model names the group it left', async () => {
+    const onGroup = { provider: 'planning', id: 'planning', api: 'router-group-planning' };
+    await resume([], onGroup);
+    const lines = routerLog.mock.calls.map((c) => String(c[0]));
+    expect(lines).toContain(
+      '[router] session on group model planning/planning moved to router/dynamic (pinned planning)'
+    );
+    expect(lines.some((l) => l.includes('resumed session'))).toBe(false);
+  }, 30000);
+
+  // Review 2026-11-21 (Important 1): Pi starts on a hidden group model when
+  // it is the settings default or `--model` names it.
+  it('a session that starts on a group model moves to router/dynamic', async () => {
+    const onGroup = { provider: 'planning', id: 'planning', api: 'router-group-planning' };
+    const { setModel, routed } = await resume([], onGroup);
+    expect(setModel.mock.calls[0]?.[0]).toMatchObject({ provider: 'router', id: 'dynamic' });
+    expect(routed?.model).toMatchObject({ provider: 'planning', id: 'planning' });
+  }, 30000);
+
+  // Review 2026-11-21 (Minor 3): a pin set for a switch that failed would
+  // wait in the handoff and fire on a later, unrelated switch.
+  it('a failed switch leaves no pin behind', async () => {
+    const branch = [modelChange('planning', 'planning'), ...routedBranch().slice(1)];
+    const { routed, awaitedSwitch } = await resume(branch, paidCloudModel(), true, 'off', false);
+    expect(awaitedSwitch).toBe(false);
+    // The later, unrelated selection of router/dynamic classifies.
+    expect(routed?.model).toMatchObject({ provider: 'dynamic', id: 'dynamic' });
+    expect(routed?.state).toBeUndefined();
+    expect(warnLog.mock.calls.map((c) => String(c[0]))).toContain(
+      '[router] resumed session: could not select router/dynamic again'
+    );
   }, 30000);
 
   // pi-subagents forks the parent's branch into a child session and starts it

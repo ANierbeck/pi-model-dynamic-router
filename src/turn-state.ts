@@ -15,14 +15,11 @@
 // old process-wide behaviour.
 
 import { AsyncLocalStorage } from 'node:async_hooks';
-import type { ClassificationResult } from './content-classifier.ts';
 
 /** What one session remembers between turns. */
 export interface TurnState {
   /** The ref pi currently shows for the session (the group ref in group sessions). */
   curModel: string;
-  /** Group the session is routed through; null = none pinned. */
-  activeGroup: string | null;
   /** Last concrete model that served a stream — the first candidate of a tool follow-up. */
   lastDynamicModel: string;
   /**
@@ -31,15 +28,7 @@ export interface TurnState {
    * (nothing was cached) or before any (docs/plans/2026-11-20-honor-pi-cache-warming.md).
    */
   cacheWarmTarget: string;
-  /**
-   * The agent run's group and intended driver, remembered at classification so a
-   * tool follow-up continues in the run's group instead of falling to `simple`
-   * (docs/plans/2026-11-07-tool-follow-up-group.md). null/'' = no run remembered.
-   */
-  runGroup: string | null;
   runDriver: string;
-  /** Category of the previous classified turn, inherited by terse follow-ups. */
-  lastClassifiedCategory: ClassificationResult['category'] | undefined;
   /** Start of the current turn (ms since epoch); 0 = no turn started. */
   turnStart: number;
   /** ADR-0027 Phase 2: sequence number of the current turn, incremented at
@@ -59,10 +48,12 @@ export interface TurnState {
 /**
  * Router-side per-session fields (the driving-model pin and the factual ref).
  *
- * NOTE: `activeGroup` and `curModel` also exist on TurnState — the extension
- * side tracks the ref pi shows, the Router the one that factually streamed.
- * They are set by different code paths (tools.ts sets both, model_select only
- * the extension side), so they are kept apart until they can be merged.
+ * NOTE: `curModel` also exists on TurnState — the extension side tracks the
+ * ref pi shows, the Router the one that factually streamed. They are set by
+ * different code paths (tools.ts sets both, model_select only the extension
+ * side), so they are kept apart until they can be merged (plan step 5).
+ * `activeGroup` lives in the session branch state since step 3 (the Router
+ * keeps its own factual copy).
  */
 export interface RouterTurnState {
   activeGroup: string | null;
@@ -152,6 +143,11 @@ export class LiveSessionContexts<C> {
     }
   }
 
+  /** The context of one live session, or null (the ambient session's ctx). */
+  get(id: string): C | null {
+    return this.live.get(id) ?? null;
+  }
+
   /** A session ended; returns the context the router should use now (null = none left). */
   end(id: string): C | null {
     this.live.delete(id);
@@ -164,12 +160,9 @@ export class LiveSessionContexts<C> {
 export function emptyTurnState(): TurnState {
   return {
     curModel: '',
-    activeGroup: null,
     lastDynamicModel: '',
     cacheWarmTarget: '',
-    runGroup: null,
     runDriver: '',
-    lastClassifiedCategory: undefined,
     turnStart: 0,
     turnSeq: 0,
     streamMs: 0,

@@ -27,8 +27,8 @@ const HEADER = [
   '',
   '## Classifier chain (computed from the shipped config)',
   '',
-  'The order is fixed in code: Laya, then the local Ollama leg, then the cloud leg, then',
-  'the static rules. The config only switches legs on and off and names their models.',
+  'The order is fixed in code: Laya, then the local Ollama leg, then the cloud leg.',
+  'When none answers, the continue fallback applies. The config only switches legs on and off and names their models.',
   '',
 ];
 

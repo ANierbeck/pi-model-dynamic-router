@@ -39,6 +39,7 @@ import fs from 'node:fs';
 import { flushBackgroundScan } from './helpers/noop-scan-cache.ts';
 import { parkStateFiles, routerStatePaths } from './helpers/extension-harness.ts';
 import { bootProjectDir, teardownBoot } from './helpers/router-env.ts';
+import { providerCall } from './helpers/provider-calls.ts';
 
 const { dynamicConfigPath, scanCachePath } = routerStatePaths();
 
@@ -80,8 +81,9 @@ async function withIsolatedRouter(
     const pi: any = {
       registerTool: vi.fn(),
       registerCommand: vi.fn(),
-      registerProvider: vi.fn((name: string, opts: any) => {
-        registerProviderCalls.push({ name, opts });
+      registerVirtualModel: vi.fn(),
+      registerProvider: vi.fn((name: any, opts?: any) => {
+        registerProviderCalls.push(providerCall(name, opts));
       }),
       setModel: vi.fn(async () => true),
       on: vi.fn((event: string, handler: any) => {

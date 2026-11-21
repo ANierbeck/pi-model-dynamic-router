@@ -14,7 +14,11 @@
 // stream has no lastDynamicModel, so its toolResult request must be classified.
 
 import { describe, it, expect, vi } from 'vitest';
-import { makeExtensionContext, startSession } from './helpers/extension-harness.ts';
+import {
+  fakeSessionManager,
+  makeExtensionContext,
+  startSession,
+} from './helpers/extension-harness.ts';
 import { doneEvent, paidCloudModel } from './helpers/stream-fixtures.ts';
 import { withRouterEnv } from './helpers/router-env.ts';
 
@@ -35,7 +39,18 @@ const CONFIG = {
   gdpval_builtin: { 'paid-model': 1000, 'other-model': 900 },
 };
 
-const session = (id: string): any => ({ sessionManager: { getSessionId: () => id } });
+/** Per-session ctxs with a STABLE manager per id (a /resume reopens the SAME file). */
+const sessionManagers = new Map<string, any>();
+const session = (id: string): any => {
+  let s = sessionManagers.get(id);
+  if (!s) {
+    const mgr = fakeSessionManager();
+    mgr.getSessionId = () => id;
+    s = { sessionManager: mgr, ui: { setStatus: vi.fn(), setFooter: vi.fn() } };
+    sessionManagers.set(id, s);
+  }
+  return s;
+};
 
 const followUpContext = (): any => ({
   messages: [
@@ -51,6 +66,7 @@ async function boot(
     onHandlers: Record<string, any>;
     modelRegistry: any;
     classifierCalls: () => number;
+    pi: any;
   }) => Promise<void>
 ): Promise<void> {
   const classifier = await import('../src/content-classifier.ts');
@@ -95,6 +111,8 @@ async function boot(
         onHandlers,
         modelRegistry,
         classifierCalls: () => vi.mocked(classifier.classifyPrompt).mock.calls.length,
+        cwd: tmpDir,
+        pi,
       });
     },
     { config: CONFIG, disableNetwork: true }
@@ -168,6 +186,29 @@ describe('turn state is keyed by session, not by process', () => {
       expect(await followUp(h, 'child')).toBeGreaterThan(0);
     });
   }, 30000);
+
+  // Review 2026-11-21 (Minor 3): a pin set in a session that ends before its
+  // next request must not wait in the handoff for a reused session id.
+  it('a session’s pending pin goes with its session_shutdown', async () => {
+    await boot(async (h) => {
+      const virtual = { provider: 'router', id: 'dynamic', api: 'pi-virtual' };
+      const tool = h.pi.registerTool.mock.calls.find(
+        (c: any[]) => c[0]?.name === 'set_model_from_group'
+      )[0];
+      await tool.execute('t', { group: 'standard' }, undefined, undefined, {
+        ...session('child'),
+        model: virtual,
+        modelRegistry: h.modelRegistry,
+      });
+      await h.onHandlers['session_shutdown']?.({}, session('child'));
+      const def = h.pi.registerVirtualModel.mock.calls[0][0];
+      const routed = await def.route(
+        { reason: 'user', messages: [], thinkingLevel: 'off', model: virtual },
+        { modelRegistry: h.modelRegistry, ...session('child') }
+      );
+      expect(routed.state).toBeUndefined();
+    });
+  }, 30000);
 });
 
 // ── the footer, the category, and sub-calls ─────────────────────────────────
@@ -184,12 +225,13 @@ async function footerOf(
   h: { onHandlers: Record<string, any>; modelRegistry: any },
   id: string,
   statuses: ReadonlyMap<string, string> = new Map(),
-  branch: unknown[] = []
+  branch: unknown[] = [],
+  model: { provider: string; id: string } = { provider: 'standard', id: 'standard' }
 ): Promise<() => string> {
   let render: (() => string) | undefined;
   const ctx: any = {
     cwd: process.cwd(),
-    model: { provider: 'standard', id: 'standard' },
+    model,
     modelRegistry: h.modelRegistry,
     sessionManager: { getSessionId: () => id, getBranch: () => branch },
     getContextUsage: () => null,
@@ -282,6 +324,61 @@ describe('footer, category and sub-calls follow the session', () => {
     });
   }, 30000);
 
+  // Virtual-models migration step 2: ctx.model stays router/dynamic, so the
+  // footer names the group route() last dispatched this session to and the
+  // model it served (review 2026-11-21, Important 4).
+  it('on router/dynamic the footer names the routed group and the served model', async () => {
+    await boot(async (h) => {
+      const virtual = { provider: 'router', id: 'dynamic', api: 'pi-virtual' };
+      const footer = await footerOf(h, 'parent', new Map(), [], virtual);
+      const def = h.pi.registerVirtualModel.mock.calls[0][0];
+      await def.route(
+        {
+          reason: 'user',
+          messages: [],
+          thinkingLevel: 'off',
+          model: virtual,
+          state: { pin: 'standard' },
+        },
+        { modelRegistry: h.modelRegistry, sessionManager: { getSessionId: () => 'parent' } }
+      );
+      await serveTurn(h.defaultExport, 'parent');
+      expect(footer()).toContain('standard/paid-cloud-provider/paid-model');
+      expect(footer()).not.toContain('dynamic/');
+    });
+  }, 30000);
+
+  // Re-review 2026-11-21 (Minor 1): after /tree the last served group
+  // belongs to the branch left behind; the new branch's stored pin counts.
+  it('after /tree the footer names the new branch’s stored group', async () => {
+    await boot(async (h) => {
+      const virtual = { provider: 'router', id: 'dynamic', api: 'pi-virtual' };
+      const branch: unknown[] = [];
+      const footer = await footerOf(h, 'parent', new Map(), branch, virtual);
+      const def = h.pi.registerVirtualModel.mock.calls[0][0];
+      await def.route(
+        { reason: 'user', messages: [], thinkingLevel: 'off', model: virtual },
+        { modelRegistry: h.modelRegistry, ...session('parent') }
+      );
+      expect(footer()).toContain('dynamic/');
+      branch.push({
+        type: 'custom',
+        customType: 'pi.virtual-model-state',
+        data: { provider: 'router', modelId: 'dynamic', state: { pin: 'standard' } },
+      });
+      await h.onHandlers['session_tree']?.({}, session('parent'));
+      expect(footer()).toContain('standard/');
+    });
+  }, 30000);
+
+  it('on router/dynamic before any request the footer names the classifying group', async () => {
+    await boot(async (h) => {
+      const virtual = { provider: 'router', id: 'dynamic', api: 'pi-virtual' };
+      const footer = await footerOf(h, 'parent', new Map(), [], virtual);
+      expect(footer()).toContain('dynamic/router/dynamic');
+    });
+  }, 30000);
+
   it('a sub-call inside a session leaves every session’s turn model alone', async () => {
     await boot(async (h) => {
       const parentFooter = await footerOf(h, 'parent');
@@ -298,11 +395,18 @@ describe('footer, category and sub-calls follow the session', () => {
     });
   }, 30000);
 
-  it('the classified category belongs to its session and goes with its shutdown', async () => {
+  it('the classified category belongs to its session and survives its shutdown', async () => {
     await boot(async (h) => {
       const classifier = await import('../src/content-classifier.ts');
-      const lastCategoryOfCall = (n: number): unknown =>
-        (vi.mocked(classifier.classifyPrompt).mock.calls[n]?.[1] as any)?.context?.lastCategory;
+      const { currentSessionId } = await import('../src/turn-state.ts');
+      // Which session asked, and what it inherited: recorded per classify call.
+      const calls: Array<[string, unknown]> = [];
+      const stub = async (prompt: string, opts: any): Promise<any> => {
+        calls.push([currentSessionId() ?? '(none)', opts?.context?.lastCategory]);
+        return { category: 'continue', reason: 'probe', confidence: 0.1 };
+      };
+      vi.mocked(classifier.classifyPrompt).mockImplementation(stub as any);
+      const lastInherited = (): unknown => calls[calls.length - 1]?.[1];
       const dynamicTurn = async (id: string): Promise<void> =>
         drain(
           h.defaultExport.groupStream(
@@ -311,14 +415,32 @@ describe('footer, category and sub-calls follow the session', () => {
             { sessionId: id }
           )
         );
-      await dynamicTurn('parent'); // call 0: classified, category remembered for 'parent'
-      await dynamicTurn('child'); // call 1: must NOT see the parent's category
-      expect(lastCategoryOfCall(1)).toBeUndefined();
-      await dynamicTurn('parent'); // call 2: sees its own
-      expect(lastCategoryOfCall(2)).toBeDefined();
+
+      // Production semantics: parent and subagent child each fire their own
+      // session_start — that is what keys the branch state per id.
+      await h.onHandlers['session_start']?.(
+        {},
+        { ...session('parent'), modelRegistry: h.modelRegistry, cwd: h.cwd }
+      );
+      await h.onHandlers['session_start']?.(
+        {},
+        { ...session('child'), modelRegistry: h.modelRegistry, cwd: h.cwd }
+      );
+
+      await dynamicTurn('parent'); // classifies, category persisted on the parent's branch
+      await dynamicTurn('child'); // the child's branch stores nothing of the parent's
+      expect(lastInherited(), JSON.stringify(calls)).toBeUndefined();
+      await dynamicTurn('parent'); // sees its own again
+      expect(lastInherited(), JSON.stringify(calls)).toBeDefined();
       await h.onHandlers['session_shutdown']?.({}, session('parent'));
-      await dynamicTurn('parent'); // call 3: the shutdown dropped it
-      expect(lastCategoryOfCall(3)).toBeUndefined();
+      // Resuming is a new session_start for the same id (pi reopens the
+      // file): the category is still on the branch — a restart keeps it.
+      await h.onHandlers['session_start']?.(
+        {},
+        { ...session('parent'), modelRegistry: h.modelRegistry, cwd: h.cwd }
+      );
+      await dynamicTurn('parent');
+      expect(lastInherited(), JSON.stringify(calls)).toBeDefined();
     });
   }, 30000);
 });

@@ -90,7 +90,6 @@ describe('docs/config-reference.md — generated from the key table', () => {
       'laya',
       'ollama',
       'cloud',
-      'static',
     ]);
     const doc = read('../docs/config-reference.md');
     // The bold step label of the chain list; a bare label also occurs in prose.

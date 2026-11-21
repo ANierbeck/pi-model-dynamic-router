@@ -46,7 +46,6 @@ describe('classifyPrompt cloud fallback: unconfigured provider', () => {
       'Unconfigured provider candidate must be skipped, not tried',
       {
         allowCloudChain: true,
-        allowStaticFallback: true,
         cfg: {} as any,
         cache: {
           classifier_cloud_models: ['openrouter/free-model-a'],
@@ -61,7 +60,7 @@ describe('classifyPrompt cloud fallback: unconfigured provider', () => {
 
     expect(hasConfiguredAuth).toHaveBeenCalledWith(mockModel);
     expect(completeSimple).not.toHaveBeenCalled();
-    // Degrades to static fallback instead of hanging/throwing.
+    // Degrades to the fallback instead of hanging/throwing.
     expect(result.category).toBeTruthy();
   });
 

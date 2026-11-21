@@ -20,6 +20,7 @@ import {
   virtualGroupContextWindow,
   VIRTUAL_GROUP_CONTEXT_CAP,
 } from '../src/group-registration.ts';
+import { providerCalls } from './helpers/provider-calls.ts';
 
 const WINDOWS: Record<string, number> = {
   'mistral/zai-glm-5-3': 1_000_000,
@@ -83,16 +84,16 @@ describe('registerGroupProviders(): contextWindow of the virtual models', () => 
     registerGroupProviders();
     const windowsOf = (group: string) =>
       Object.fromEntries(
-        registerProvider.mock.calls
-          .find((c: any[]) => c[0] === group)![1]
-          .models.map((m: any) => [m.id, m.contextWindow])
+        providerCalls(registerProvider)
+          .find((c) => c.name === group)!
+          .opts.models.map((m: any) => [m.id, m.contextWindow])
       );
     return windowsOf;
   }
 
   it('gives the dynamic group the capped window of all static candidates (was always 128k)', () => {
     const windowsOf = register();
-    expect(windowsOf('dynamic')).toEqual({ dynamic: 250_000, 'dynamic:use-static': 250_000 });
+    expect(windowsOf('dynamic')).toEqual({ dynamic: 250_000 });
   });
 
   it('derives static group windows from their own candidates', () => {

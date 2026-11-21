@@ -536,9 +536,7 @@ export class StreamOrchestrator {
     ...[model, context, options]: Parameters<StreamOrchestrator['groupStream']>
   ): AssistantMessageEventStream {
     const { cfg, cache, router } = this.ctx;
-    const useStaticMatch = model.id.match(/^(.+):use-static$/);
-    const useStatic = useStaticMatch !== null;
-    const groupName = useStaticMatch ? useStaticMatch[1] : model.id;
+    const groupName = model.id;
     const g = cfg.model_groups[groupName];
     const isDynamic = g?.method === 'dynamic';
     const sourceModel: SourceModelInfo = { provider: model.provider, id: model.id, api: model.api };
@@ -608,7 +606,6 @@ export class StreamOrchestrator {
         // classification stays unchanged.
         const isCompaction = this.ctx.isCompactionTurn(context);
         const classifyOpts: ClassificationOptions = {
-          allowStaticFallback: useStatic,
           allowCloudChain: cfg.classifier?.cloud?.enabled === true,
           escalateLowConfidence: cfg.classifier?.cloud?.escalate_low_confidence === true,
           cfg,

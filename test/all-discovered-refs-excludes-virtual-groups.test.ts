@@ -78,13 +78,12 @@ describe('allDiscoveredRefs() excludes virtual group self-references', () => {
     metricsModule.setModelMap({}, []);
   });
 
-  it('drops <group>/<group> and <group>/<group>:use-static refs, keeps real models', () => {
+  it('drops <group>/<group> refs, keeps real models', () => {
     // The registry contains BOTH the virtual group models (as
     // registerGroupProviders() would register them) AND a real model.
     const registry = makeRegistry([
       { provider: 'trivial', id: 'trivial' }, // virtual self-ref
       { provider: 'dynamic', id: 'dynamic' }, // virtual self-ref
-      { provider: 'dynamic', id: 'dynamic:use-static' }, // virtual self-ref
       { provider: 'mistral', id: 'glm-5-2', cost: { input: 0.3, output: 0.9 } }, // real model
     ]);
 
@@ -95,7 +94,6 @@ describe('allDiscoveredRefs() excludes virtual group self-references', () => {
 
     expect(refs).not.toContain('trivial/trivial');
     expect(refs).not.toContain('dynamic/dynamic');
-    expect(refs).not.toContain('dynamic/dynamic:use-static');
     expect(refs).toContain('mistral/glm-5-2');
   });
 
@@ -115,6 +113,24 @@ describe('allDiscoveredRefs() excludes virtual group self-references', () => {
     const refs = router.allDiscoveredRefs();
     expect(refs).not.toContain('trivial/trivial');
     expect(refs).not.toContain('dynamic/dynamic');
+    expect(refs).toContain('mistral/glm-5-2');
+  });
+
+  // docs/plans/2026-11-21-virtual-models-migration.md, step 2: Pi lists the
+  // router's virtual selection model in getAvailable() (registerVirtualModel
+  // marks its provider configured). Routing a turn to it would recurse into
+  // the router's own route().
+  it('drops the router/dynamic virtual selection model', () => {
+    const registry = makeRegistry([
+      { provider: 'router', id: 'dynamic' },
+      { provider: 'mistral', id: 'glm-5-2', cost: { input: 0.3, output: 0.9 } },
+    ]);
+
+    const router = new Router(cfg, cache, new Map());
+    router.setSessionCtx({ modelRegistry: registry } as any);
+
+    const refs = router.allDiscoveredRefs();
+    expect(refs).not.toContain('router/dynamic');
     expect(refs).toContain('mistral/glm-5-2');
   });
 
@@ -150,10 +166,10 @@ describe('allDiscoveredRefs() excludes virtual group self-references', () => {
 describe('isVirtualGroupRef() predicate', () => {
   const groupNames = new Set(['trivial', 'dynamic']);
 
-  it('flags <group>/<group> and <group>/<group>:use-static', () => {
+  it('flags <group>/<group>; a :use-static id is no virtual ref', () => {
     expect(isVirtualGroupRef('trivial/trivial', groupNames)).toBe(true);
     expect(isVirtualGroupRef('dynamic/dynamic', groupNames)).toBe(true);
-    expect(isVirtualGroupRef('dynamic/dynamic:use-static', groupNames)).toBe(true);
+    expect(isVirtualGroupRef('dynamic/dynamic:use-static', groupNames)).toBe(false);
   });
 
   it('does not flag real models, even those under a group-named provider', () => {
@@ -161,6 +177,11 @@ describe('isVirtualGroupRef() predicate', () => {
     // A real model registered under a group-named provider (id differs) is
     // NOT a virtual self-ref and must stay eligible.
     expect(isVirtualGroupRef('trivial/some-real-model', groupNames)).toBe(false);
+  });
+
+  it('flags the router/dynamic virtual selection model', () => {
+    expect(isVirtualGroupRef('router/dynamic', groupNames)).toBe(true);
+    expect(isVirtualGroupRef('router/other', groupNames)).toBe(false);
   });
 
   it('does not flag a non-existent group or a ref without a slash', () => {
