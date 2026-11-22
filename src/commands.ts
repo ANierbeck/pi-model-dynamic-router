@@ -82,6 +82,7 @@ import type {
 import type { RateLimitManager } from './rate-limit.ts';
 import type { Router } from './routing.ts';
 import { runInSession, sessionIdOf } from './turn-state.ts';
+import { sessionGroupOf, type PinHandoff, type ServedGroups } from './virtual-selection.ts';
 import { hasAnyInstall } from './laya-model-install.ts';
 import {
   defaultLayaInstallDeps,
@@ -109,6 +110,10 @@ interface CommandDeps {
   readonly cfgPath: string;
   readonly costMux: (prov: string) => number;
   readonly curModel: string;
+  /** The group route() last dispatched each session to (virtual selection). */
+  readonly served: ServedGroups;
+  /** Pins waiting for the session's next route() (set_model_from_group). */
+  readonly pins: PinHandoff;
   readonly effCost: (ref: string) => number | 'unknown';
   readonly fmtModel: (ref: string, i: number, sel: boolean) => string;
   readonly formatBlocklist: () => string;
@@ -232,7 +237,6 @@ export function formatClassifierStatus(input: ClassifierStatusInput): string[] {
         : `cloud (${probedCount} probed)`
     );
   }
-  legs.push('static');
   lines.push(`│ Chain: ${legs.join(' → ')}`);
   const laya = input.laya;
   if (laya) {
@@ -1768,6 +1772,16 @@ export function createCommands(rt: CommandDeps): void {
             ''
           );
 
+          const sessionGroup = sessionGroupOf(ctx.model, sessionIdOf(ctx), rt.cfg.model_groups, {
+            served: rt.served,
+            pins: rt.pins,
+            branch: ctx.sessionManager?.getBranch?.() ?? [],
+          });
+          // The model the session is using: in a router session (router/dynamic,
+          // a group model) curModel is the SELECTION, so the served ref decides;
+          // on a concrete model the Router's served ref may be stale.
+          const currentRef =
+            sessionGroup !== null ? rt.router.getCurModel() || rt.curModel : rt.curModel;
           // Group tables with top 5 models (3 available + up to 2 limited)
           for (const [groupName, g] of Object.entries(rt.cfg.model_groups)) {
             const n = 5;
@@ -1784,8 +1798,9 @@ export function createCommands(rt: CommandDeps): void {
                     : g.method === 'dynamic'
                       ? 'dynamic (content-based)'
                       : g.method;
-            const active = rt.curModel && rt.allDiscoveredRefs().includes(rt.curModel);
-            const activeMarker = active ? ' ◀' : '';
+            // The session's group (sessionGroupOf), not "any model is current":
+            // that condition held for every group at once.
+            const activeMarker = groupName === sessionGroup ? ' ◀' : '';
 
             // Add fallback groups info if present
             const fallbackInfo =
@@ -1870,7 +1885,7 @@ export function createCommands(rt: CommandDeps): void {
                   limited,
                   limitSecs: limited ? rt.limitSecs(ref) : 0,
                   costMux: rt.costMux(prov),
-                  current: rt.curModel === ref,
+                  current: currentRef === ref,
                   ...(why ? { why } : {}),
                 };
               });

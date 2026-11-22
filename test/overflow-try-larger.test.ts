@@ -134,6 +134,7 @@ describe('driveStream: context_overflow — try-larger recursion', () => {
       const pi: any = {
         registerTool: vi.fn(),
         registerCommand: vi.fn(),
+        registerVirtualModel: vi.fn(),
         registerProvider: vi.fn(),
         setModel: vi.fn(async () => true),
         on: vi.fn((e: string, h: any) => {
@@ -233,6 +234,7 @@ describe('driveStream: context_overflow — try-larger recursion', () => {
       const pi: any = {
         registerTool: vi.fn(),
         registerCommand: vi.fn(),
+        registerVirtualModel: vi.fn(),
         registerProvider: vi.fn(),
         setModel: vi.fn(async () => true),
         on: vi.fn((e: string, h: any) => {

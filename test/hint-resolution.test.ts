@@ -33,6 +33,15 @@ describe('isRefUsable()', () => {
     expect(registry.find).not.toHaveBeenCalled();
   });
 
+  // docs/plans/2026-11-21-virtual-models-migration.md, step 2: Pi resolves
+  // the router's own virtual selection model like any extension model, so
+  // the provider-outside-PROVIDER_MAP rule below would admit it.
+  it('returns false for the router/dynamic virtual selection model (would recurse)', async () => {
+    const registry = fakeRegistry();
+    expect(await isRefUsable('router/dynamic', noGroups, registry)).toBe(false);
+    expect(registry.find).not.toHaveBeenCalled();
+  });
+
   it('returns false when the model is not found in the registry', async () => {
     const registry = fakeRegistry({ find: vi.fn(() => undefined) });
     expect(await isRefUsable('anthropic/claude-sonnet-5', noGroups, registry)).toBe(false);

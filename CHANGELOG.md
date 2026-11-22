@@ -55,6 +55,67 @@ without the owner's explicit release approval).
 
 ### Changed
 
+- **Breaking: router groups are selected through one Pi virtual model,
+  `router/dynamic`** (plan `docs/plans/2026-11-21-virtual-models-migration.md`,
+  owner decisions 2026-11-21; spike `docs/research/2026-11-21-router-shape-spike.md`).
+  Pi keeps a virtual model's selection on the session branch across replies,
+  `--continue`, `/resume`, `/fork` and `/tree`, so the router no longer
+  re-selects anything at session start. What changes for you:
+  - **The group models (`planning/planning`, `simple/simple`, …,
+    `dynamic/dynamic`) are no longer listed** in `/model` or in scoped models
+    (`enabledModels`, model cycling). Select
+    `router/dynamic` ("Router (dynamic)") instead; it classifies every request
+    as `dynamic/dynamic` did. If your `enabledModels` named group models,
+    replace them with `router/dynamic`.
+  - **`--model <group>/<group>` and a settings default naming a group still
+    resolve.** An interactive session then moves to `router/dynamic` with that
+    group pinned (`dynamic/dynamic` moves unpinned); an old session whose
+    branch selected a group migrates the same way on its next start. Headless
+    sessions (print mode, pi-subagents children) keep the group model, so
+    delegating to `<group>/<group>` from a subagent call works as before.
+  - **`set_model_from_group` pins instead of switching.** It records the
+    group as the session's pin (on `router/dynamic` only); `router/dynamic`
+    then serves every request from that group until the pin is released
+    (`set_model_from_group` with `none` or the classifying group). The
+    session's model stays `router/dynamic`.
+  - **Category memory, the tool follow-up run, the pin and the served group
+    live on the session branch** (Pi's `pi.virtual-model-state` entries), so
+    a fork or `/tree` jump sees its own branch's values and a restart keeps
+    them: the first turn after `--continue` inherits the previous category,
+    and the per-group `context_budget` of the group the last request was
+    routed to (after a failed walk, the `fallback_groups` entry that took
+    over) applies
+    from the first turn. A write that changes nothing appends no entry, and
+    the writes of one request (run group, category, served group) land as
+    ONE `pi.virtual-model-state` entry, appended when the model's stream
+    opens — the state is on the branch while the model answers, so a process
+    that dies mid-answer keeps it. A cascade into a fallback group adds one
+    entry per group that opened a stream. Batches are kept per session, so a
+    subagent session streaming in the same process never mixes its state
+    into the main session's branch.
+  - Before the first request after a restart, the footer and the `/router`
+    overview name the routed group (the classifying group, or the pin) as
+    they do afterwards — no longer the group that served last (that one is
+    the budget anchor, not a display value; a `--continue` showed e.g.
+    `code_complex/router/dynamic` until the first prompt).
+  - The Router's own copy of the session group is gone: a switch to a
+    concrete model no longer leaves the footer naming the group that served
+    before the switch. Red-first: `test/serve-persists-group.test.ts` (the
+    served group was not on the branch), `test/footer-concrete-model-group.test.ts`
+    (the footer named `standard` for a `planning`-tier model),
+    `test/selection-branch-store.test.ts` (unchanged writes appended
+    entries), `test/virtual-model.test.ts` (the pin release on
+    `route()`'s fallback dropped the stored run group and category),
+    `test/selection-write-batch.test.ts` and
+    `test/selection-write-batch-turn.test.ts` (a dynamic turn wrote 3–4
+    entries, none of them while the model answered; a second session read
+    the first one's pending state), `test/virtual-selection.test.ts` (the
+    footer named the stored served group after a restart).
+- **The `<group>:use-static` variant and the keyword static classifier are
+  gone** (ADR 0037). When every classifier hop fails, the answer is the
+  `continue` category (`no classifier answered`), which is what a plain group
+  already got. A session on a `<group>:use-static` model migrates to
+  `router/dynamic` on its next start.
 - **Host alignment to pi 1.6.0** (devDependencies `^1.5.2` → `^1.6.0` for
   `pi-coding-agent`, `pi-ai`, `pi-tui`). The user's pi self-updated to 1.6.0,
   so the test suite now runs against the host that actually loads the router.
@@ -76,19 +137,16 @@ without the owner's explicit release approval).
   model the router had chosen last, and no request was routed any more. Pi
   restores a session's model from the branch and lets a `model_change` outlive
   later replies only for Pi virtual models; router group models are ordinary
-  providers and every reply names the physical model. At `session_start` the
-  router now selects the group again when the branch's latest `model_change`
-  names a group and Pi fell back to the last responder (plan
-  `docs/plans/2026-11-21-continue-restores-group.md`). A deliberate `/model`
-  switch is kept; headless sessions (print mode, pi-subagents children, which
-  receive a fork of the parent's branch) are left alone. The session's
-  thinking level survives the switch, a last reply that was aborted or failed
-  still counts as Pi's fallback, and the switch is not logged as a user model
-  pick. Red-first: `test/continue-restores-group.test.ts` (the wiring and the
-  headless-child cases failed against the old handler; the abort, thinking
-  level, outcome-record, await and log cases against the first version).
-  The static guard `test/no-router-setmodel-static.test.ts` now allows exactly
-  this second `setModel` call site next to `set_model_from_group`.
+  providers and every reply names the physical model. Fixed by the
+  `router/dynamic` virtual model (see Changed): Pi itself keeps the
+  selection. A pre-2.0.0 session whose branch selected a group, or that Pi
+  already resumed onto the last responder, moves to `router/dynamic` once at
+  `session_start` (the group becomes the pin; headless sessions are left
+  alone; the thinking level survives; the move is not logged as a user model
+  pick). That one-time move is the router's only `pi.setModel` call, pinned
+  by `test/no-router-setmodel-static.test.ts`. The interim session-start
+  re-selection (plan `docs/plans/2026-11-21-continue-restores-group.md`)
+  never shipped. Red-first: `test/continue-restores-group.test.ts`.
 - **Footer hid other extensions' status texts.** The router's footer replaces
   pi's built-in footer, which was the only renderer of `ctx.ui.setStatus()`
   texts, so statuses from other extensions (for example pi-memory, pi-subagents)

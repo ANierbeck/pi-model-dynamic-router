@@ -211,6 +211,8 @@ describe('Phase 2 wiring — orchestrator passes the minted turn id to classifyP
       async () => ({ category: 'standard', confidence: 0.9, reason: 'r' }) as any
     );
     const ctx: any = {
+      // The request batch of the selection state (unused by these tests).
+      selectionBatch: { begin: () => {}, end: () => {}, commit: () => {} },
       cfg: { model_groups: { dynamic: { method: 'dynamic' } }, model_metrics: {}, providers: {} },
       cache: {},
       router: { allDiscoveredRefs: () => [], getTopModels: () => ({ models: [] }) },

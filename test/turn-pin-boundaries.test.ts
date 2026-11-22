@@ -13,6 +13,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { Router } from '../src/routing.ts';
 import type { Config } from '../src/types.ts';
+import { SessionStore, emptyRouterTurnState } from '../src/turn-state.ts';
 
 const mkRouter = () =>
   new Router(
@@ -63,5 +64,27 @@ describe('Router turn pin — clock-controlled boundaries', () => {
     const r = mkRouter();
     r.setCurModel('prov/previous-turn'); // t=5000
     expect(r.getCurModel(5001)).toBe('');
+  });
+});
+
+// load() replaces the Router on every session_start and from tools
+// (resolve_model_group, update_model_metrics) — subagent sessions share it
+// while a parent turn is still running. The turn's driving-model pin lives in
+// the per-session store index.ts hands every Router, so the rebuild keeps it.
+// Moved here from test/delegation.test.ts, whose end-to-end version drove the
+// pin through set_model_from_group: the tool no longer sets the driver (the
+// virtual-models migration pins a group instead), and that test passed
+// without the tool call even before the migration.
+describe('Router turn pin — survives the Router rebuild of load()', () => {
+  const cfg = { model_groups: {}, model_metrics: {}, providers: {} } as Config;
+
+  it('a Router built on the same store keeps the turn driver and boundary', () => {
+    const store = new SessionStore(emptyRouterTurnState);
+    const before = new Router(cfg, {} as never, new Map() as never, store);
+    before.noteTurnStart(Date.now());
+    before.setCurModel('pi-claude/claude-sonnet-5'); // the turn's driver
+    const after = new Router(cfg, {} as never, new Map() as never, store);
+    after.setCurModel('mistral/cheap-bulk-reader'); // a nested delegation stream
+    expect(after.getTurnDriverRef()).toBe('pi-claude/claude-sonnet-5');
   });
 });

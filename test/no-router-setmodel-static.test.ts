@@ -10,12 +10,22 @@
  * the session model on every prompt and was only caught by a code review
  * (index.ts refactor, review B, 2026-10-02).
  *
- * This test scans every production source file and allows exactly TWO call
- * sites, both owner-decided: the user-invoked `set_model_from_group` tool in
- * src/tools.ts, and the `--continue` group restore in src/event-handlers.ts
+ * This test scans every production source file and allows exactly ONE call
+ * site: the pre-migration session restore in src/event-handlers.ts
  * (review round 2026-11-21; plan
- * docs/plans/2026-11-21-continue-restores-group.md). Anything else — most of
- * all a per-prompt switch — must fail here.
+ * docs/plans/2026-11-21-continue-restores-group.md). Anything else — most
+ * of all a per-prompt switch — must fail here.
+ *
+ * Migration plan step 2 (docs/plans/2026-11-21-virtual-models-migration.md)
+ * removed the OTHER site: `set_model_from_group` (src/tools.ts) now pins the
+ * group on the session branch instead of switching. The restore's site
+ * stays: Pi resolves a resumed session's model from the branch selection
+ * BEFORE extensions load (sdk.js getBranchSelection), so an old branch that
+ * fell back to the physical model can only be moved to router/dynamic
+ * through pi.setModel — the only live-switch API — at session_start (spike
+ * condition F7). Pi's own _recordModelSelection then appends the virtual
+ * model_change to the branch, and every later resume hands over to Pi's
+ * virtual-model branch selection with no router call at all.
  */
 import { describe, it, expect } from 'vitest';
 import fs from 'node:fs';
@@ -49,7 +59,23 @@ describe('router never calls pi.setModel() (static guard)', () => {
     expect(productionSources().length).toBeGreaterThan(20);
   });
 
-  it('only src/tools.ts and src/event-handlers.ts call setModel()', () => {
+  // Migration plan step 2 (T4/T5): the tool's call site is gone (it pins
+  // now); exactly the F7 old-session restore remains.
+  it('keeps exactly ONE call site under the virtual-models migration', () => {
+    let total = 0;
+    const perFile: string[] = [];
+    for (const file of productionSources()) {
+      const calls = setModelCallLines(file).length;
+      total += calls;
+      if (calls > 0) perFile.push(`${path.relative(repoRoot, file)}: ${calls}`);
+    }
+    expect(perFile, 'remaining setModel call sites').toEqual([
+      `${path.join('src', 'event-handlers.ts')}: 1`,
+    ]);
+    expect(total).toBe(1);
+  });
+
+  it('only src/event-handlers.ts calls setModel()', () => {
     const offenders: string[] = [];
     let toolsCalls = 0;
     let restoreCalls = 0;
@@ -67,9 +93,10 @@ describe('router never calls pi.setModel() (static guard)', () => {
       for (const line of calls) offenders.push(`${rel}: ${line.trim()}`);
     }
     expect(offenders).toEqual([]);
-    // The two legitimate call sites must still exist — otherwise the regex
-    // has silently stopped matching and this test proves nothing.
-    expect(toolsCalls).toBe(1);
+    // The migration removed the tool's call site (pin instead of switch) and
+    // kept the restore's — both pins must hold, otherwise the regex has
+    // silently stopped matching and this test proves nothing.
+    expect(toolsCalls).toBe(0);
     expect(restoreCalls).toBe(1);
   });
 });

@@ -1053,14 +1053,13 @@ export function createStreamProxy(rt: StreamProxyDeps): StreamProxy {
     context: Context,
     options?: SimpleStreamOptions
   ): AssistantMessageEventStream {
-    const useStaticMatch = model.id.match(/^(.+):use-static$/);
-    const groupName = useStaticMatch ? useStaticMatch[1] : model.id;
+    const groupName = model.id;
     const g = rt.cfg.model_groups[groupName];
     const isDynamic = g?.method === 'dynamic';
     // Stamped onto every synthetic error AssistantMessage this call produces —
-    // must exactly match `model` (Pi's `agent.state.model`), including the
-    // `:use-static` suffix on `.id` when present, or Pi's overflow-recovery
-    // sameModel check silently fails and auto-compaction never fires.
+    // must exactly match `model` (Pi's `agent.state.model`), or Pi's
+    // overflow-recovery sameModel check silently fails and auto-compaction
+    // never fires.
     const sourceModel: SourceModelInfo = { provider: model.provider, id: model.id, api: model.api };
 
     if (!isDynamic) {

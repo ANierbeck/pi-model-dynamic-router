@@ -231,6 +231,13 @@ function narrateBreakerOpen(
 export interface StreamOrchestratorContext {
   // Mutable session state
   activeGroup: string | null;
+  /**
+   * Batches a request's selection-state writes into one branch entry:
+   * begin/end nest (a walk inside a walk joins the batch), commit appends
+   * the folded state when a stream opens (recordServedRef), the outermost
+   * end appends what changed after that.
+   */
+  selectionBatch: { begin(): void; end(): void; commit(): void };
   lastDynamicModel: string;
   /**
    * The agent run's group and the model the run was meant to be driven by, set
@@ -356,11 +363,24 @@ export interface StreamOrchestratorContext {
  * the reader (health, breaker, metrics). Every stream-opening path of
  * driveStream goes through this one function.
  */
-function recordServedRef(ctx: StreamOrchestratorContext, ref: string): void {
+function recordServedRef(ctx: StreamOrchestratorContext, ref: string, groupName?: string): void {
   if (inSubCall()) return;
   ctx.router.setCurModel(ref);
-  ctx.router.setActiveGroup(ctx.activeGroup);
   ctx.lastDynamicModel = ref;
+  // Step 5 (owner decision 2026-11-21): a stream writes the branch state's
+  // `group` — the group whose candidate walk opened it. That is the walk's
+  // group, not the served model's: candidates merged in from fallback_groups
+  // walk under the primary group's name; only the all-failed cascade walks a
+  // fallback group under its own name. The main walk records after tryStream
+  // returned a stream (a walk that opens nothing keeps the previous group);
+  // the breaker probe and the cooldown collapse record before their
+  // tryStream. The per-group compaction budget and the decision log's
+  // previous-turn group read it, so both survive a restart. An unchanged
+  // group appends nothing (createSelectionStateSource).
+  if (groupName) ctx.activeGroup = groupName;
+  // A stream opened: the request's state goes on the branch now, not when
+  // the answer ends — a process that dies mid-answer keeps it.
+  ctx.selectionBatch.commit();
 }
 
 export class StreamOrchestrator {
@@ -536,9 +556,7 @@ export class StreamOrchestrator {
     ...[model, context, options]: Parameters<StreamOrchestrator['groupStream']>
   ): AssistantMessageEventStream {
     const { cfg, cache, router } = this.ctx;
-    const useStaticMatch = model.id.match(/^(.+):use-static$/);
-    const useStatic = useStaticMatch !== null;
-    const groupName = useStaticMatch ? useStaticMatch[1] : model.id;
+    const groupName = model.id;
     const g = cfg.model_groups[groupName];
     const isDynamic = g?.method === 'dynamic';
     const sourceModel: SourceModelInfo = { provider: model.provider, id: model.id, api: model.api };
@@ -568,6 +586,11 @@ export class StreamOrchestrator {
 
     // Dynamic group
     const proxy = createAssistantMessageEventStream();
+    // One selection-state entry per request: the writes before the walk
+    // (run cleared, category, run group) join the walk's batch, and the
+    // served-ref record commits it when a stream opens. Begun here, inside
+    // the session scope, and ended in the chain's finally (same scope).
+    this.ctx.selectionBatch.begin();
     void (async (): Promise<void> => {
       let candidates: string[];
       let dynamicLabel: string | undefined;
@@ -608,7 +631,6 @@ export class StreamOrchestrator {
         // classification stays unchanged.
         const isCompaction = this.ctx.isCompactionTurn(context);
         const classifyOpts: ClassificationOptions = {
-          allowStaticFallback: useStatic,
           allowCloudChain: cfg.classifier?.cloud?.enabled === true,
           escalateLowConfidence: cfg.classifier?.cloud?.escalate_low_confidence === true,
           cfg,
@@ -699,7 +721,11 @@ export class StreamOrchestrator {
         const turnId = this.ctx.turnId?.() ?? null;
         classifyOpts.turn = turnId;
         const prevGroupAtTurnStart = this.ctx.activeGroup ?? null;
-        const prevTurnSeq = Number(turnId?.split('#')[1] ?? 0);
+        // The turn a group HINT corrects is the PREVIOUS one (ADR-0027 Phase 2,
+        // DecisionCorrectionRecord.prevTurn). Turn numbers restart per process,
+        // so on turn #1 there is no previous turn to join against, even when
+        // the branch carries a served group from an earlier process.
+        const prevTurnSeq = Number(turnId?.split('#')[1] ?? 0) - 1;
         const classification = await this.ctx.classifyPrompt(prompt ?? '', classifyOpts);
         // A user pin decides the model, not the category: the turn's content
         // still has one, and that is what the next unpinned turn inherits.
@@ -1016,11 +1042,13 @@ export class StreamOrchestrator {
         undefined,
         sourceModel
       );
-    })().catch((err: unknown) => {
-      // The try/catch above covers classification, but its own catch branch
-      // resolves the fallback group; a throw there must still end the stream.
-      this.failStream(proxy, err, 'in dynamic routing', sourceModel);
-    });
+    })()
+      .catch((err: unknown) => {
+        // The try/catch above covers classification, but its own catch branch
+        // resolves the fallback group; a throw there must still end the stream.
+        this.failStream(proxy, err, 'in dynamic routing', sourceModel);
+      })
+      .finally(() => this.ctx.selectionBatch.end());
     return proxy;
   }
 
@@ -1047,6 +1075,10 @@ export class StreamOrchestrator {
     visitedGroups?: Set<string>,
     sourceModel?: SourceModelInfo
   ): Promise<void> {
+    // The walk joins the request's batch (openGroupStream) or, on the static
+    // and the tool follow-up path, opens it; recordServedRef commits it when
+    // a stream opens. A sub-call's walk writes nothing anyway.
+    this.ctx.selectionBatch.begin();
     try {
       await this.walkCandidates(
         proxy,
@@ -1065,6 +1097,8 @@ export class StreamOrchestrator {
         `outside the candidate loop for group ${groupName ?? label ?? '?'}`,
         sourceModel
       );
+    } finally {
+      this.ctx.selectionBatch.end();
     }
   }
 
@@ -1123,7 +1157,6 @@ export class StreamOrchestrator {
     sourceModel?: SourceModelInfo
   ): Promise<void> {
     const ctx = this.ctx;
-    if (ctx.activeGroup) ctx.router.setActiveGroup(ctx.activeGroup);
 
     const allErrors: { ref: string; message: string }[] = [];
     const pushError = (ref: string, message: string): void => {
@@ -1277,7 +1310,7 @@ export class StreamOrchestrator {
 
       const prefix = label ? `${label} · ${ref}` : ref;
       pushRouterInfoLogged(proxy, `> [router] ${prefix}\n\n`);
-      recordServedRef(ctx, ref);
+      recordServedRef(ctx, ref, groupName);
 
       let attemptSucceeded = false;
       // M3: the stream's own duration — the only honest latency sample for
@@ -1698,7 +1731,7 @@ export class StreamOrchestrator {
           );
           await sleepMs(probeSecs * 1000 + 2000);
         }
-        recordServedRef(ctx, probeRef);
+        recordServedRef(ctx, probeRef, groupName);
         const probeAttempt = openCandidateAttempt(options);
         const probeTarget = await ctx
           .tryStream(probeRef, context, probeAttempt.options)
@@ -1825,7 +1858,7 @@ export class StreamOrchestrator {
             `> [router] All models in cooldown, retrying ${bestRef} (shortest cooldown, ${bestSecs}s)...\n\n`
           );
         }
-        recordServedRef(ctx, bestRef);
+        recordServedRef(ctx, bestRef, groupName);
         const collapseAttempt = openCandidateAttempt(options);
         const target = await ctx
           .tryStream(bestRef, context, collapseAttempt.options)

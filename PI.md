@@ -33,7 +33,7 @@ The dynamic routing is implemented in **`src/content-classifier.ts`** and run in
 The shipped chain is local first, then cloud. **A local setup is recommended:** without a local model, classification falls back to price-capped cloud models, which then receive the prompt text (see the README section "Data handling & privacy" to turn this off):
 
 - **Recommended, for local classification**: **Ollama** installed and running (`ollama serve`), with at least one chat model pulled (the classifier chain is derived and probed from what Ollama reports)
-- If every classifier hop fails, the classifier falls back to the `continue` category (routed to `standard`); when the request uses a `<group>:use-static` model, static keyword classification runs instead
+- If every classifier hop fails, the classifier falls back to the `continue` category (routed to `standard`)
 - **Experimental, Apple Silicon**: an optional local Laya classifier stage can answer the category from a local MLX sidecar instead of the chain — disabled by default, bring-your-own weights, see the README section "Local Laya classifier stage (experimental)"
 
 ## Architecture
@@ -288,7 +288,7 @@ Each `exclude_models` entry is an exact ref, or a glob where `*` matches any run
 
 - No curated model lists (auto-discover everything plus explicit models)
 - No token budget tracking (providers don't expose limits)
-- Cloud-first classification needs at least one reachable free cloud model; without one, Ollama (or the optional static fallback) is required
+- Cloud-first classification needs at least one reachable free cloud model; without one, Ollama is required
 
 ## Commands
 

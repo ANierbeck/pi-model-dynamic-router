@@ -8,6 +8,7 @@
 import { splitRef } from './utils.ts';
 import { PROVIDER_MAP } from './providers.ts';
 import type { Group } from './types.ts';
+import { VIRTUAL_PROVIDER, VIRTUAL_MODEL_ID } from './virtual-selection.ts';
 
 /**
  * The subset of Pi's ModelRegistry that usability checks depend on. Kept
@@ -39,6 +40,8 @@ export async function isRefUsable(
   if (!modelRegistry) return false;
   const { provider, modelId } = splitRef(ref);
   if (modelGroups[provider]) return false;
+  // The router's own selection model routes back into the router.
+  if (provider === VIRTUAL_PROVIDER && modelId === VIRTUAL_MODEL_ID) return false;
   const model = modelRegistry.find(provider, modelId);
   if (!model) return false;
   // Reach-through to the facade's private ModelRuntime (verified against

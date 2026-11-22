@@ -11,6 +11,12 @@
 
 import { vi } from 'vitest';
 import { createAssistantMessageEventStream } from '@earendil-works/pi-ai';
+import {
+  createSelectionStateSource,
+  STATE_ENTRY,
+  VIRTUAL_MODEL_ID,
+  VIRTUAL_PROVIDER,
+} from '../../src/virtual-selection.ts';
 import { StreamOrchestrator } from '../../src/stream-orchestrator.ts';
 
 export interface WalkAttempt {
@@ -37,10 +43,29 @@ export interface WalkWorld {
 
 export function walkStubWorld(config: WalkStubConfig = {}): WalkWorld {
   const attempts: WalkAttempt[] = [];
+  const branchEntries: { type: string; customType: string; data: unknown }[] = [];
+  // The real selection-state source over an in-memory branch, so the walk's
+  // batch begin/end and its folded writes run as in production (index.ts).
+  const selection = createSelectionStateSource({
+    branch: () => branchEntries,
+    leafId: () => 'walk-stub',
+    appendState: (state) => {
+      branchEntries.push({
+        type: 'custom',
+        customType: STATE_ENTRY,
+        data: { provider: VIRTUAL_PROVIDER, modelId: VIRTUAL_MODEL_ID, state },
+      });
+    },
+  });
   const ctx: any = {
     cfg: { model_groups: { standard: { method: 'best' } }, model_metrics: {}, providers: {} },
     cache: {},
-    router: { setActiveGroup: vi.fn(), setCurModel: vi.fn() },
+    router: { setCurModel: vi.fn() },
+    selectionBatch: {
+      begin: () => selection.beginBatch(),
+      end: () => selection.endBatch(),
+      commit: () => selection.commit(),
+    },
     escalation: { level: 'standard' },
     resolve: () => null,
     estimateContextTokens: () => 100,

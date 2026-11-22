@@ -38,8 +38,8 @@ describe('isVirtualGroupRef — full truth table', () => {
     expect(isVirtualGroupRef('trivial/trivial', groups)).toBe(true);
   });
 
-  it('group/group:use-static is the static pin ref', () => {
-    expect(isVirtualGroupRef('simple/simple:use-static', groups)).toBe(true);
+  it('group/group:use-static is no virtual group ref (the variant is gone)', () => {
+    expect(isVirtualGroupRef('simple/simple:use-static', groups)).toBe(false);
   });
 
   it('group with any OTHER model id is a real model, not virtual', () => {

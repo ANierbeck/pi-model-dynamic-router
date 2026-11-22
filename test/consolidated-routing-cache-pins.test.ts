@@ -86,6 +86,7 @@ describe('cache-session-reload', () => {
           registerCommand: vi.fn((name: string, def: any) => {
             commands[name] = def;
           }),
+          registerVirtualModel: vi.fn(),
           registerProvider: vi.fn(),
           setModel: vi.fn(async () => true),
           on: vi.fn((event: string, handler: any) => {
@@ -330,6 +331,7 @@ describe('dynamic-config-resync-keys', () => {
             registerCommand: vi.fn((name: string, def: any) => {
               commands[name] = def;
             }),
+            registerVirtualModel: vi.fn(),
             registerProvider: vi.fn(),
             setModel: vi.fn(async () => true),
             on: vi.fn((event: string, handler: any) => {
@@ -1257,6 +1259,7 @@ describe('sticky-model-regression', () => {
       const pi: any = {
         registerTool: vi.fn(),
         registerCommand: vi.fn(),
+        registerVirtualModel: vi.fn(),
         registerProvider: vi.fn(),
         setModel,
         on: vi.fn((event: string, handler: any) => {

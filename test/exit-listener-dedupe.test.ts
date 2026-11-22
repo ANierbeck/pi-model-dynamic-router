@@ -23,6 +23,7 @@ function makeMockPi(): any {
   return {
     registerTool: vi.fn(),
     registerCommand: vi.fn(),
+    registerVirtualModel: vi.fn(),
     registerProvider: vi.fn(),
     setModel: vi.fn(async () => true),
     on: vi.fn(),

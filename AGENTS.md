@@ -108,8 +108,16 @@
   3605 passing / 3 skipped); the pi 1.6.0 host alignment, the footer status
   line and honoring Pi's `cacheWarming` incl. its review round (3643 passing / 3 skipped);
   the `--continue` group restore incl. its review round (3662 passing / 3 skipped);
-  the busy-session `/router fresh` and long-turn `worker_step` plans (3675 passing / 3 skipped); do not
-  lower the bar to a count).
+  the virtual-models migration step 2 (selection layer, old-session migration,
+  pin-only `set_model_from_group`) incl. its two review rounds, then the `:use-static` drop (ADR 0037:
+  the keyword classifier's tests went with it; 3703 passing / 3 skipped) + step 3 branch-state (3721 passing /
+  3 skipped) + step 5 workaround removal (served-group writer, Router group
+  copy removed) incl. its review round (decision-log prevTurn, /router current
+  mark; 3731 passing / 3 skipped) + the per-request, per-session state-write
+  batch with its stream-open commit and the footer's routed group after a
+  restart (3744 passing / 3 skipped) + the busy-session `/router fresh` and
+  long-turn `worker_step` plans (3757 passing / 3 skipped); do not lower the
+  bar to a count).
   Don't lower the `coverage.thresholds` in `vitest.config.ts` to unblock a
   red run — fix the actual regression.
 - New features/fixes get a regression test that actually exercises the fix
@@ -305,19 +313,6 @@
   code, the 1:1 group rename it planned silently never happened, and the
   file itself was never committed although the CHANGELOG cites it.
 
-## 13. Model use: the expensive model plans, cheap workers do mechanical steps
-
-- **Owner rule 2026-11-21:** the expensive model plans, decides and judges
-  (design, review, the final verification). Mechanical steps go to a cheaper
-  worker: gate runs, log scans, searches, bulk reads, and applying an edit that
-  is already fully specified. A worker step that costs the expensive model its
-  full context is a waste of tokens.
-- This rule is the standing authorisation for the subagent delegation the
-  subagent guidance requires. Delegate only the mechanical part, and keep one
-  writer per worktree.
-- The plan that measures this and decides how far delegation goes is
-  `docs/plans/2026-11-21-long-turn-model-use.md`.
-
 ## 12. ADRs are immutable
 
 - **Owner rule 2026-10-26:** an ADR records a decision as it was made. Once
@@ -333,3 +328,16 @@
   proposed "historical ADRs get a pointer" in its docs sweep. That step was
   dropped, and the rule written down so the next plan does not propose it
   again.
+
+## 13. Model use: the expensive model plans, cheap workers do mechanical steps
+
+- **Owner rule 2026-11-21:** the expensive model plans, decides and judges
+  (design, review, the final verification). Mechanical steps go to a cheaper
+  worker: gate runs, log scans, searches, bulk reads, and applying an edit that
+  is already fully specified. A worker step that costs the expensive model its
+  full context is a waste of tokens.
+- This rule is the standing authorisation for the subagent delegation the
+  subagent guidance requires. Delegate only the mechanical part, and keep one
+  writer per worktree.
+- The plan that measures this and decides how far delegation goes is
+  `docs/plans/2026-11-21-long-turn-model-use.md`.

@@ -697,6 +697,7 @@ describe('default export wiring: tool_call pre-call read block', () => {
       const pi: any = {
         registerTool: vi.fn(),
         registerCommand: vi.fn(),
+        registerVirtualModel: vi.fn(),
         registerProvider: vi.fn(),
         setModel: vi.fn(async () => true),
         on: vi.fn((event: string, handler: any) => {
@@ -813,90 +814,6 @@ describe('default export wiring: tool_call pre-call read block', () => {
           input: { path: large, offset: 1, limit: 50 },
         })
       ).toBeUndefined();
-    } finally {
-      boot.cleanup();
-    }
-  });
-
-  it('the pinned turn driver survives a load()-triggered Router rebuild (mid-turn session_start)', async () => {
-    // Gap found in the round-2 re-review: load() replaces the Router on
-    // EVERY session_start and directly from tools (resolve_model_group,
-    // update_model_metrics). Subagent sessions share this module-level
-    // Router, so a subagent's session_start can fire WHILE a parent turn is
-    // still running. Without a pin carry in load(), that rebuild silently
-    // un-protects the expensive-model read block for the rest of the turn.
-    //
-    // Pin route: set_model_from_group resolves the group and calls
-    // router.setCurModel(ref) on the fresh Router (it runs load() itself
-    // first), pinning the group model as the turn's driver. The session
-    // ref stays CHEAP (mistral) so ONLY the pin can explain an expensive
-    // block on the small (below block_lines) file.
-    const expensiveModel = {
-      provider: 'pi-claude',
-      id: 'claude-sonnet-5',
-      api: 'openai-completions',
-      contextWindow: 200_000,
-      cost: { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 0 },
-    };
-    const config = {
-      ...baseConfig,
-      // Floor checks resolve GDPval through the gdpval map (gdpval_builtin
-      // in the layered config), never through model_metrics — the shipped
-      // value for claude-sonnet-5 (1603) would fall outside the 1630..1700
-      // code_complex band, so pin the builtin score inside the band.
-      gdpval_builtin: { 'claude-sonnet-5': 1650 },
-      model_groups: {
-        // code_complex is one of the two expensive groups (D4 renames);
-        // 1650 sits inside its 1630..1700 band.
-        code_complex: {
-          fallback_groups: [],
-          min_gdpval: 1630,
-          max_gdpval: 1700,
-          models: ['pi-claude/claude-sonnet-5'],
-        },
-      },
-    };
-    const boot = await bootWithConfig(config, [KNOWN_MODEL, expensiveModel]);
-    try {
-      const { small } = writeFiles(boot.tmpDir);
-      // Cheap session model — the session-ref fallback the hook would use
-      // if every router-side ref were lost.
-      await boot.onHandlers['turn_start']?.(
-        {},
-        {
-          model: { provider: 'mistral', id: 'mistral-medium-3.5' },
-        }
-      );
-
-      // Pin the expensive group model as this turn's driving ref.
-      const setGroupTool = boot.registerToolCalls.find(
-        (c: any) => c[0]?.name === 'set_model_from_group'
-      )?.[0];
-      expect(setGroupTool).toBeDefined();
-      await (setGroupTool as any).execute(
-        'test',
-        { group: 'code_complex' },
-        undefined,
-        undefined,
-        boot.sessionCtx
-      );
-
-      // Sanity: the pin is in place and blocks the expensive driver below
-      // the size threshold.
-      const before = boot.onHandlers['tool_call']({ toolName: 'read', input: { path: small } });
-      expect(before?.expensive).toBe(true);
-
-      // A second session_start fires load() — a mid-turn Router rebuild
-      // (in production: a subagent session_start or a tool calling load()).
-      await boot.onHandlers['session_start']?.({}, boot.sessionCtx);
-      await flushBackgroundScan();
-
-      // The pinned driver must survive the rebuild: still an expensive
-      // block, not a fallback to the cheap session ref.
-      const out = boot.onHandlers['tool_call']({ toolName: 'read', input: { path: small } });
-      expect(out).toBeDefined();
-      expect(out.expensive).toBe(true);
-      expect(out.reason).toContain('expensive models');
     } finally {
       boot.cleanup();
     }

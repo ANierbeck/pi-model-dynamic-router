@@ -59,6 +59,8 @@ function harness(opts: {
   const resolveCalls: string[] = [];
 
   const ctx: any = {
+    // The request batch of the selection state (unused by these tests).
+    selectionBatch: { begin: () => {}, end: () => {}, commit: () => {} },
     cfg: { model_groups, model_metrics: {} },
     cache: {},
     router: {},

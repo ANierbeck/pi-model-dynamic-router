@@ -344,12 +344,17 @@ describe('the group model declares the served model’s cache economics', () => 
     });
   }, 30000);
 
-  it('re-registers only when the declared economics change', async () => {
+  it('declares without re-registering the group provider (spike condition G1b)', async () => {
+    // Every re-registration shows the hidden group models in Pi's
+    // availability snapshot until the queued refresh lands
+    // (docs/research/2026-11-21-router-shape-spike.md), so the declaration
+    // reaches Pi through the provider's live getModels().
     await boot(async (h) => {
+      const before = h.registrationsOf('standard');
+      expect(h.groupModel('standard').promptCache).toBeUndefined();
       await drain(h.entry('standard', userTurn(), { sessionId: 'S' }));
-      const after = h.registrationsOf('standard');
-      await drain(h.entry('standard', userTurn(), { sessionId: 'S' }));
-      expect(h.registrationsOf('standard')).toBe(after);
+      expect(h.groupModel('standard').promptCache).toBeDefined();
+      expect(h.registrationsOf('standard')).toBe(before);
     });
   }, 30000);
 

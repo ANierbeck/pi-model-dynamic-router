@@ -139,33 +139,28 @@ describe('LiveSessionContexts', () => {
 describe('Router turn fields are per session', () => {
   const makeRouter = (): Router => new Router({ model_groups: {} } as any, {} as any, new Map());
 
-  it('keeps the driving-model pin, the factual ref and the group of each session apart', () => {
+  it('keeps the driving-model pin and the factual ref of each session apart', () => {
     const router = makeRouter();
     runInSession('parent', () => {
       router.noteTurnStart(1000);
-      router.setActiveGroup('planning');
       router.setCurModel('prov/strong');
     });
     runInSession('child', () => {
       router.noteTurnStart(1000);
-      router.setActiveGroup('simple');
       router.setCurModel('prov/cheap');
     });
     runInSession('parent', () => {
       expect(router.getCurModel()).toBe('prov/strong');
       expect(router.getTurnDriverRef()).toBe('prov/strong');
-      expect(router.getActiveGroup()).toBe('planning');
     });
     runInSession('child', () => {
       expect(router.getCurModel()).toBe('prov/cheap');
       expect(router.getTurnDriverRef()).toBe('prov/cheap');
-      expect(router.getActiveGroup()).toBe('simple');
     });
   });
 
   it('a Router built on the same store sees the state (a replacement drops nothing)', () => {
     const store = new SessionStore(() => ({
-      activeGroup: null as string | null,
       curModel: '',
       curModelAt: 0,
       turnDriverRef: '',

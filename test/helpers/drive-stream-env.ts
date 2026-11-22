@@ -36,6 +36,8 @@ export async function withIsolatedRouter(
   fn: (helpers: {
     groupStream: (model: any, context: any, options: any) => AsyncIterable<AssistantMessageEvent>;
     streamSimple: ReturnType<typeof vi.fn>;
+    /** The session ctx's SessionManager: the one the router persists branch state on. */
+    sessionManager: any;
   }) => Promise<void>
 ): Promise<void> {
   const scanCachePath = path.join(process.env.PI_ROUTER_STATE_DIR!, '.cache', 'scan-cache.json');
@@ -55,12 +57,16 @@ export async function withIsolatedRouter(
       getApiKeyForProvider: async () => 'k',
       runtime: { streamSimple },
     };
-    await startSession(onHandlers, { modelRegistry, cwd: tmpDir });
+    const sessionCtx = await startSession(onHandlers, { modelRegistry, cwd: tmpDir });
 
     await fn({
       groupStream: (model: any, context: any, options: any) =>
         defaultExport.groupStream(model, context, options) as AsyncIterable<AssistantMessageEvent>,
       streamSimple,
+      // The router writes branch state through the SESSION ctx's manager
+      // (ambientCtx in index.ts), not the extension API object's: the two are
+      // separate fakeSessionManager instances.
+      sessionManager: sessionCtx.sessionManager,
     });
   } finally {
     cwdSpy.mockRestore();

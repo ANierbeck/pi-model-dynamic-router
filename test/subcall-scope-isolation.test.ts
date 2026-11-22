@@ -43,6 +43,7 @@ function world(overrides: Record<string, unknown> = {}) {
     cfg: { model_groups: {}, model_metrics: {}, delegation: { enabled: true } },
     cache: { usage_log: [] },
     activeGroup: 'simple',
+    selectionBatch: { begin: () => {}, end: () => {}, commit: () => {} },
     lastDynamicModel: TURN_MODEL,
     estimateContextTokens: () => 100,
     isLimited: () => false,
@@ -101,6 +102,7 @@ function delegation(w: ReturnType<typeof world>, streamSimple: ReturnType<typeof
     cache: w.ctx.cache,
     cfg: w.ctx.cfg as Config,
     activeGroup: null,
+    selectionBatch: { begin: () => {}, end: () => {}, commit: () => {} },
     curModel: 'dynamic/dynamic',
     turnStart: 0,
     escalation: new SessionEscalation(),
@@ -196,6 +198,7 @@ describe('bulk_read tool', () => {
       cfg: w.ctx.cfg as Config,
       cfgPath: '/tmp/router-config.json',
       activeGroup: null,
+      selectionBatch: { begin: () => {}, end: () => {}, commit: () => {} },
       getM: () => ({}) as any,
       resolve: () => null,
       fmtModel: () => '',
@@ -270,6 +273,8 @@ describe('degraded cascade paths inside a sub-call', () => {
 describe('dynamic group used as a delegation group', () => {
   function dynamicWorld() {
     const ctx: any = {
+      // The request batch of the selection state (unused by these tests).
+      selectionBatch: { begin: () => {}, end: () => {}, commit: () => {} },
       cfg: {
         model_groups: { dynamic: { method: 'dynamic' }, standard: { method: 'best' } },
         model_metrics: {},
