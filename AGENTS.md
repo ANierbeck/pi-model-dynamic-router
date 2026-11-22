@@ -116,7 +116,7 @@
   mark; 3731 passing / 3 skipped) + the per-request, per-session state-write
   batch with its stream-open commit and the footer's routed group after a
   restart (3744 passing / 3 skipped) + the busy-session `/router fresh` and
-  long-turn `worker_step` plans (3757 passing / 3 skipped); do not lower the
+  long-turn `worker_step` plans (3774 passing / 3 skipped); do not lower the
   bar to a count).
   Don't lower the `coverage.thresholds` in `vitest.config.ts` to unblock a
   red run — fix the actual regression.

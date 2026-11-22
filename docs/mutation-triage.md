@@ -1841,3 +1841,24 @@ metrics.ts / routing.ts remainders: CLOSED 2026-11-08 (nightly N11 — see
 `docs/mutation-triage.md`).
 
 ---
+
+## Nightly N12 (2026-11-22) — metrics.ts remainders
+
+Report: scheduled run 45017121699 (main @ 03274c1). `src/metrics.ts` is unchanged up to `7ce2502`, so the report still matches the code. Dataset: `docs/mutation-data/nightly-n12.json` (38 undetected mutants, backfilled with `scripts/mutation-carryover.ts --backfill`).
+
+| Step | Result |
+|---|---|
+| Full-suite recheck (`scripts/mutation-recheck.ts`) | 17 killed by the existing suite (perTest false survivors, SUITE-KILLED); 21 survive |
+| New pins: `test/metrics-lookup-fallback.test.ts` (17 tests) | 18 of the 21 killed (REAL-KILLED) |
+| Equivalent | 3 (EQUIVALENT, reasons in the dataset) |
+
+Equivalent mutants:
+- **L379** `cache?.model_score_cache` → `cache.model_score_cache`: `cache` is never null. Module state starts as `{}`, and `setCache` dereferences its argument at once. The `?.` guards a null that no caller produces.
+- **L1109** condition → `isFreeByDefinition(ref)` alone: a `{0,0}` from the fallback chain comes from a zero `discovered` entry, an exact `free_models` match, or a config provider cost 0. The original and the mutant return the same value in each case, or the L1112 config check returns it.
+- **L1120** `?? []` → `?? ["Stryker was here"]`: the literal matches only a slashless ref equal to that text, which is no model ref.
+
+Corrections to the working notes of this round: the L1107 OR-operand mutant `fallback.output !== 0` → `false` is **not** equivalent (an OR price `{input 0, output 5}` turns into `unknown`). Test: `an OR price with a non-zero output is a price, not a placeholder`. The L1109 `discovered !== 0` mutant is equivalent only under the reasoning above, not by a general rule.
+
+Gates on the result: `tsc` exit 0, lint gate 0 findings, prettier clean, `npx vitest run` 3774 passed / 3 skipped (300 files), AGENTS §4 count updated.
+
+Next nightly: the carry-over gives 35 rows `recheck` (the existing suite kills them, so a re-appearance means perTest attribution again) and 3 rows `ledgered`.
