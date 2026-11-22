@@ -312,7 +312,13 @@ describe('branch state beyond the pin (plan step 3)', () => {
     });
   });
 
-  describe('sessionGroupOf — the persisted group after a restart', () => {
+  // Owner decision 2026-11-22 (option A): the branch's stored `group` is the
+  // compaction-budget anchor (the group that SERVED), not a display value.
+  // In a running process the footer names the routed group (the classifying
+  // group or the pin); naming the stored served group before the first
+  // request after a restart showed e.g. `code_complex/router/dynamic`, a
+  // value the same session never shows once it routes again.
+  describe('sessionGroupOf — after a restart', () => {
     // code_complex has to be in the fixture's config: known() filters against it.
     const CFG: any = {
       dynamic: { method: 'dynamic' },
@@ -331,18 +337,19 @@ describe('branch state beyond the pin (plan step 3)', () => {
       return sessionGroupOf(VIRTUAL, 's', CFG, { served, pins, branch: opts.branch ?? [] });
     };
 
-    it('the branch’s persisted group beats the classifying group, pin and stored pin still outrank it', () => {
+    it('the stored served group is not shown: unpinned is the classifying group', () => {
       const g = (group: string | null, pin: string | null = null): unknown[] => [
         entry({ pin, group }),
       ];
-      expect(of({ branch: g('planning') })).toBe('planning');
+      expect(of({ branch: g('code_complex') })).toBe('dynamic');
       expect(of({ branch: g('planning', null), pending: 'code_complex' })).toBe('code_complex');
-      expect(of({ pending: null, branch: g('planning') })).toBe('dynamic'); // a pending release beats the persisted group
+      expect(of({ pending: null, branch: g('planning') })).toBe('dynamic');
       expect(of({ served: 'dynamic', branch: g('planning') })).toBe('dynamic');
-      // A group the config no longer has falls back.
-      expect(of({ branch: g('retired') })).toBe('dynamic');
-      // An old pinned entry without a group still shows its pin.
+      // A stored pin is shown, also when the served group differs.
+      expect(of({ branch: g('code_complex', 'planning') })).toBe('planning');
       expect(of({ branch: [entry({ pin: 'planning' })] })).toBe('planning');
+      // A pin the config no longer has falls back.
+      expect(of({ branch: g(null, 'retired') })).toBe('dynamic');
     });
   });
 });

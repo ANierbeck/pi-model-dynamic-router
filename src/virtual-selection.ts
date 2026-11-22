@@ -400,10 +400,13 @@ export function sessionGroupOf(
     // A pending pin (applied by the next route()) decides, INCLUDING a
     // pending null — that is a release, it beats the stored values.
     if (pending !== undefined) return known(pending) ? pending : dispatchGroupOf(groups);
-    // The state persisted on THIS branch (step 3) — survives a restart, and a
-    // /tree jump reads the jumped-to branch.
+    // The pin persisted on THIS branch (step 3) — survives a restart, and a
+    // /tree jump reads the jumped-to branch. The stored `group` is NOT shown:
+    // it is the group that served (the compaction-budget anchor), while a
+    // running session shows the routed group; naming it before the first
+    // request showed a value the session never shows afterwards (owner
+    // decision 2026-11-22, option A).
     const st = branchState(sources.branch);
-    if (known(st?.group)) return st.group;
     if (known(st?.pin)) return st.pin;
     return dispatchGroupOf(groups);
   }
