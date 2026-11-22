@@ -86,7 +86,7 @@ describe('classifyPrompt fallback chain', () => {
 
       expect(callOllama).toHaveBeenCalledTimes(1);
       expect(result.category).toBe('continue');
-      expect(result.reason).toContain('Ollama unavailable');
+      expect(result.reason).toBe('no classifier answered');
     });
 
     it('returns the fallback category (never throws) when both Ollama models fail', async () => {
@@ -96,13 +96,12 @@ describe('classifyPrompt fallback chain', () => {
         model: 'gemma-primary',
         fallbackModel: 'gemma-backup',
         allowCloudChain: false,
-        allowStaticFallback: false,
       });
 
       // classifyPrompt must NOT throw — it degrades to a routed fallback so
       // the stream can continue via the fallback group.
       expect(result.category).toBe('continue');
-      expect(result.reason).toContain('Ollama unavailable');
+      expect(result.reason).toBe('no classifier answered');
     });
   });
 
@@ -135,16 +134,16 @@ describe('classifyPrompt fallback chain', () => {
       expect(result).toEqual({ category: 'simple', reason: 'from cloud', confidence: 0.9 });
     });
 
-    it('degrades to the static classifier when unreachable and cloud is disabled', async () => {
+    it('degrades to the continue fallback when unreachable and cloud is disabled', async () => {
       vi.mocked(isOllamaAvailable).mockResolvedValue(false);
 
       const result = await classifyPrompt('refactor the whole parser when ollama is unreachable', {
         allowCloudChain: false,
-        allowStaticFallback: true,
       });
 
       expect(callOllama).not.toHaveBeenCalled();
-      expect(result.category).toBe('code_complex');
+      expect(result.category).toBe('continue');
+      expect(result.reason).toBe('no classifier answered');
     });
   });
 
@@ -279,7 +278,6 @@ describe('classifyPrompt fallback chain', () => {
         } as any,
         completeSimple,
         findModel,
-        allowStaticFallback: false,
       });
 
       expect(completeSimple).not.toHaveBeenCalled();
@@ -378,12 +376,12 @@ describe('classifyPrompt fallback chain', () => {
       });
     });
 
-    it('falls through an empty cloud candidate list to static classification', async () => {
+    it('falls through an empty cloud candidate list to the fallback answer', async () => {
       vi.mocked(callOllama).mockRejectedValue(new Error('ECONNREFUSED'));
 
       // No probed cache, no discovered models, no configured free models —
       // the cloud loop has nothing to try and must fall through to the
-      // static classifier (allowStaticFallback: true).
+      // fallback answer.
       const result = await classifyPrompt('Explain what a closure is briefly to me', {
         allowCloudChain: true,
         cfg: { providers: {} } as any,
@@ -394,12 +392,10 @@ describe('classifyPrompt fallback chain', () => {
         } as any,
         completeSimple: vi.fn(),
         findModel: vi.fn(),
-        allowStaticFallback: true,
       });
 
-      // Real classifyStatically runs: 'explain'/'briefly' → simple.
-      expect(result.category).toBe('simple');
-      expect(result.reason).toContain('Simple question');
+      expect(result.category).toBe('continue');
+      expect(result.reason).toBe('no classifier answered');
     });
   });
 
@@ -560,7 +556,6 @@ describe('classifyPrompt fallback chain', () => {
         model: 'gemma-primary',
         fallbackModel: 'gemma-backup',
         allowCloudChain: false,
-        allowStaticFallback: false,
       });
 
       // Both attempts return invalid JSON → both throw → fallback result.

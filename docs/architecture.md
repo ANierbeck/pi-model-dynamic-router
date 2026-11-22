@@ -201,7 +201,7 @@ Modules without their own heading above. One row per file, so every `src/` modul
 | `src/budget-pacing.ts` | Declared spend allowance per provider (user-layer key) and its pacing |
 | `src/bulk-read.ts` | `bulk_read` tool and the `read` pre-call block (ADR-0007) |
 | `src/cache-stats.ts` | Provider-reported usage block of an assistant message (all fields optional); cache statistics |
-| `src/session-restore.ts` | `--continue` / `/resume` / `/fork`: when Pi restored the physical model that answered last, the router group the branch selected (selected again at `session_start`) |
+| `src/legacy-session-restore.ts` | Old sessions (pre-migration): when Pi restored the physical model that answered last, the group the branch had selected — migrated at `session_start` to `router/dynamic` + pin |
 | `src/cache-warming.ts` | Honoring Pi's `cacheWarming`: warm-request detection, the cache economics a group model declares, Pi's `cache_warm` usage entries |
 | `src/cache.ts` | `CacheManager`: the scan cache file and the `usage_log` entry shape |
 | `src/capabilities.ts` | Raw entries of provider models-list responses (the shape varies per provider) |
@@ -228,6 +228,8 @@ Modules without their own heading above. One row per file, so every `src/` modul
 | `src/event-handlers.ts` | Core Pi event handlers, extracted from `index.ts` |
 | `src/free-model-registration.ts` | On-demand registration of the configured free models into Pi's model registry |
 | `src/group-registration.ts` | Virtual group provider registration and the groups' `groupStream`, extracted from `index.ts` |
+| `src/virtual-selection.ts` | The routing decisions of the selection layer: dispatch group, stored/pending pins (src/virtual-model.ts wires them to Pi) |
+| `src/virtual-model.ts` | The router/dynamic virtual selection model: registered once at extension load, `route()` names the hidden group model that dispatches the request (docs/plans/2026-11-21-virtual-models-migration.md, step 2) |
 | `src/hint-resolution.ts` | Resolves HINT model refs against Pi's `ModelRegistry`, using its duck-typed fields |
 | `src/integration-registry.ts` | The optional integrations the router knows (plan `2026-11-08-optional-integrations-config.md`) |
 | `src/integration.ts` | Shape shared by every integration block (the contract); Laya-specific fields live next to Laya |

@@ -10,13 +10,12 @@ Concepts (order, privacy, when cloud is used) are in `README.md` and
 
 ## Classifier chain (computed from the shipped config)
 
-The order is fixed in code: Laya, then the local Ollama leg, then the cloud leg, then
-the static rules. The config only switches legs on and off and names their models.
+The order is fixed in code: Laya, then the local Ollama leg, then the cloud leg.
+When none answers, the continue fallback applies. The config only switches legs on and off and names their models.
 
 - **Laya** — off: integration not enabled
 - **Local (Ollama)** — on: models derived from what Ollama reports
 - **Cloud** — on: when local gives no answer; probe-verified list
-- **Static rules** — off: only for the :use-static model variant; not set by the config
 
 ## Keys
 

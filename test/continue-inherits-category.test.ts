@@ -66,17 +66,16 @@ describe('continue classification inherits the previous category (Phase 2)', () 
     expect(counts.byCategory.continue).toBeUndefined();
   });
 
-  it('inherits on the static path too (LLM unavailable, static classifier says continue)', async () => {
+  it('inherits on the fallback path too (LLM unavailable, no classifier answers)', async () => {
     vi.mocked(ollamaUtils.callOllama).mockRejectedValue(new Error('down'));
     const result = await classifyPrompt(continuation(), {
       cache: localModelCache(),
-      allowStaticFallback: true,
       context: { lastCategory: 'planning' },
     });
     expect('category' in result && result.category).toBe('planning');
   });
 
-  it('inherits when the classifier is unavailable and the static classifier is disabled', async () => {
+  it('inherits when the classifier is unavailable and the fallback answers', async () => {
     vi.mocked(ollamaUtils.callOllama).mockRejectedValue(new Error('down'));
     const result = await classifyPrompt(continuation(), {
       cache: localModelCache(),

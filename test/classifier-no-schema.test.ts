@@ -119,7 +119,7 @@ describe('classifier no-structured-output self-healing (live incident 2026-09-26
     await classifyPrompt('skip fail-open: first turn prompt', { cache });
 
     // Now the fallback fails too — classifyPrompt must degrade without
-    // throwing: the static fallback (classifyStatically) answers with a
+    // throwing: the fallback answers with a
     // usable category (fail-open: always a classification result).
     callOllama.mockClear();
     callOllama.mockRejectedValue(new Error('no response within timeout'));

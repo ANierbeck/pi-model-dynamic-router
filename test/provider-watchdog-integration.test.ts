@@ -38,7 +38,6 @@ describe('classifier feeds the local-provider watchdog', () => {
       cache,
       model: 'primary-model',
       fallbackModel: 'fallback-model',
-      allowStaticFallback: true,
     });
     expect(callOllama).toHaveBeenCalledTimes(2);
     expect(isProviderWedged(cache, 'ollama')).toBe(true);
@@ -48,7 +47,6 @@ describe('classifier feeds the local-provider watchdog', () => {
       cache,
       model: 'primary-model',
       fallbackModel: 'fallback-model',
-      allowStaticFallback: true,
     });
     expect(callOllama).not.toHaveBeenCalled();
   });
@@ -61,7 +59,6 @@ describe('classifier feeds the local-provider watchdog', () => {
       cache,
       model: 'primary-model',
       fallbackModel: 'fallback-model',
-      allowStaticFallback: true,
     });
     expect(callOllama).toHaveBeenCalledTimes(2);
     expect(isProviderWedged(cache, 'ollama')).toBe(false);
@@ -77,7 +74,6 @@ describe('classifier feeds the local-provider watchdog', () => {
       cache,
       model: 'primary-model',
       fallbackModel: 'fallback-model',
-      allowStaticFallback: true,
     });
     expect(isProviderWedged(cache, 'ollama')).toBe(true);
     expect(cache.provider_breaker?.ollama?.open_until).toBeGreaterThan(Date.now());

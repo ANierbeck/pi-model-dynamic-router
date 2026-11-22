@@ -3,22 +3,28 @@
  * 2026-10-02, task 10): bulk_read, set_model_from_group, resolve_model_group,
  * update_model_metrics. Tool names, flags and schemas are byte-identical —
  * these are user-visible API surface (plan invariant). Note:
- * set_model_from_group is one of two sanctioned pi.setModel() callers; the
- * other is the resume restore of a router group in event-handlers.ts
- * (docs/plans/2026-11-21-continue-restores-group.md). Pure code motion.
+ * set_model_from_group pins the group on the session branch (virtual-models
+ * migration step 2, docs/plans/2026-11-21-virtual-models-migration.md): the
+ * next route() applies it and returns the pinned group's model. Pure code
+ * motion otherwise.
  */
 
 import { executeBulkRead } from './bulk-read.ts';
 import { routerLog } from './logger.ts';
 import { runAsSubCall } from './subcall-scope.ts';
 import { runInSession, sessionIdOf } from './turn-state.ts';
+import {
+  VIRTUAL_PROVIDER,
+  VIRTUAL_MODEL_ID,
+  dispatchGroupOf,
+  type PinHandoff,
+} from './virtual-selection.ts';
 import * as metricsModule from './metrics.ts';
 import { splitRef, textOf } from './utils.ts';
 import type { ExtensionContext, ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { Type } from 'typebox';
 import * as fs from 'node:fs';
 import type { Config, Metrics } from './types.ts';
-import type { Router } from './routing.ts';
 
 /**
  * Dependencies createTools reads from index.ts's extension closure. Exposed as
@@ -27,15 +33,15 @@ import type { Router } from './routing.ts';
  * managers on reload, and a captured copy would go stale.
  */
 interface ToolDeps {
-  activeGroup: string | null;
   readonly cfg: Config;
   readonly cfgPath: string;
   readonly fmtModel: (ref: string, i: number, sel: boolean) => string;
   readonly getM: (ref: string) => Metrics;
   readonly load: () => void;
+  /** Pins set during a turn, handed to the selection layer's next route(). */
+  readonly pins: PinHandoff;
   readonly pi: ExtensionAPI;
   readonly resolve: (name: string) => { selected: string; candidates: string[] } | null;
-  readonly router: Router;
 }
 
 /**
@@ -45,6 +51,21 @@ interface ToolDeps {
  * nothing to await only hides it.
  */
 const syncResult = <T>(value: T): Promise<T> => Promise.resolve(value);
+
+/** What set_model_from_group reports: the pin it set (null: released). */
+interface PinDetails {
+  readonly group: string;
+  readonly pinned: string | null;
+  readonly selected?: string;
+  readonly provider?: string;
+  readonly modelId?: string;
+}
+
+const pinResult = (
+  text: string,
+  details: PinDetails
+): Promise<{ content: { type: 'text'; text: string }[]; details: PinDetails }> =>
+  syncResult({ content: [{ type: 'text', text }], details });
 
 export function createTools(rt: ToolDeps): void {
   // ── Tools ──────────────────────────────────────────────────────────────
@@ -89,9 +110,9 @@ export function createTools(rt: ToolDeps): void {
     name: 'set_model_from_group',
     label: 'Set Model from Group',
     description:
-      'Resolve a model group and immediately switch the current session to use the selected model. Combines resolve_model_group + model switch in one step.',
-    parameters: Type.Object({ group: Type.String({ description: 'Model group name' }) }),
-    async execute(
+      'Pin a model group for this session branch: the router serves that group from the next request on. "none" (or the classifying group) releases the pin. Works only while the session model is router/dynamic.',
+    parameters: Type.Object({ group: Type.String({ description: 'Model group name, or "none"' }) }),
+    execute(
       _id: string,
       params: { group: string },
       _signal: AbortSignal | undefined,
@@ -99,34 +120,45 @@ export function createTools(rt: ToolDeps): void {
       ctx: ExtensionContext
     ) {
       rt.load();
-      const name = params.group.toLowerCase(),
-        res = rt.resolve(name);
-      if (!res)
+      // The pin reaches only route() of router/dynamic; on any other model
+      // it would sit in the handoff and fire after a later switch.
+      if (ctx.model?.provider !== VIRTUAL_PROVIDER || ctx.model.id !== VIRTUAL_MODEL_ID)
         throw new Error(
-          `No models for group "${params.group}". Available: ${Object.keys(rt.cfg.model_groups).join(', ')}`
+          `set_model_from_group pins a group of ${VIRTUAL_PROVIDER}/${VIRTUAL_MODEL_ID}; the session model is ${ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : '(none)'}. Select ${VIRTUAL_PROVIDER}/${VIRTUAL_MODEL_ID} first.`
         );
-      for (const ref of res.candidates) {
-        const { provider, modelId } = splitRef(ref);
-        const model = ctx.modelRegistry.find(provider, modelId);
-        if (model && (await rt.pi.setModel(model))) {
-          runInSession(sessionIdOf(ctx), () => {
-            rt.activeGroup = name;
-            rt.router.setActiveGroup(name); // Set active group in router for display
-            rt.router.setCurModel(ref); // Set current model in router for status line
-          });
-          const m = rt.getM(ref);
-          return {
-            content: [
-              {
-                type: 'text',
-                text: `${ref} (${name}, gdp:${m.gdpval}, tps:${Math.round(m.throughput_tps)})`,
-              },
-            ],
-            details: { group: name, selected: ref, provider, modelId },
-          };
-        }
+      const groups = rt.cfg.model_groups ?? {};
+      const name = params.group.toLowerCase();
+      // "none" and the classifying group both mean: classify again.
+      if (name === 'none' || name === dispatchGroupOf(groups)) {
+        rt.pins.set(sessionIdOf(ctx), null);
+        return pinResult('pin released: the router classifies each request', {
+          group: name,
+          pinned: null,
+        });
       }
-      throw new Error(`No available model in "${name}". Tried: ${res.candidates.join(', ')}`);
+      // route() can only serve a group with a registered model; a group the
+      // router refused to register (named like a Pi provider, ADR-0019)
+      // would fall back on every request.
+      const registered = (g: string): boolean => !!ctx.modelRegistry?.find?.(g, g);
+      const available = (): string => Object.keys(groups).filter(registered).join(', ');
+      if (!Object.prototype.hasOwnProperty.call(groups, name))
+        throw new Error(`Unknown group "${params.group}". Available: ${available()}`);
+      if (!registered(name))
+        throw new Error(
+          `Group "${name}" has no registered model, so the router cannot serve it. Available: ${available()}`
+        );
+      rt.pins.set(sessionIdOf(ctx), name);
+      // The expected model is the group's top candidate; the served model
+      // appears on the assistant message. A dynamic group resolves per
+      // request, so it has none to name.
+      const res = rt.resolve(name);
+      if (!res) return pinResult(`pinned ${name}`, { group: name, pinned: name });
+      const m = rt.getM(res.selected);
+      const { provider, modelId } = splitRef(res.selected);
+      return pinResult(
+        `pinned ${name}: ${res.selected} (gdp:${m.gdpval}, tps:${Math.round(m.throughput_tps)})`,
+        { group: name, pinned: name, selected: res.selected, provider, modelId }
+      );
     },
   });
 

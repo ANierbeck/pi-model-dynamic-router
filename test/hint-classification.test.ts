@@ -2,11 +2,7 @@
 // Unit tests for HINT classification — deterministic path and LLM fallback
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import {
-  classifyPrompt,
-  classifyStatically,
-  detectHintDirectly,
-} from '../src/content-classifier.js';
+import { classifyPrompt, detectHintDirectly } from '../src/content-classifier.js';
 import type { ClassificationResult, HintClassificationResult } from '../src/content-classifier.js';
 import { localModelCache } from './helpers/local-model-cache.ts';
 import { resolveShortModelName } from '../src/utils.js';
@@ -292,23 +288,17 @@ describe('HINT Classification', () => {
   });
 
   describe('Static Classification Fallback', () => {
-    it('falls back to static classification when LLM fails', async () => {
+    it('falls back to the continue fallback when the LLM fails', async () => {
       const { callOllama } = await import('../src/ollama-utils.js');
 
-      // Mock callOllama to throw error
       vi.mocked(callOllama).mockRejectedValue(new Error('Ollama not available'));
 
-      // Use a prompt that classifyStatically maps to 'simple' (not 'fallback')
-      const result = await classifyPrompt('What is the capital of France?', {
-        allowStaticFallback: true,
+      const result = await classifyPrompt('xqzwk unrelated gibberish', {
         cache: localModelCache(),
       });
 
-      // Should use static classification
-      // "What is the capital of France?" is classified as 'simple' by classifyStatically
-      const staticResult = classifyStatically('What is the capital of France?');
-      expect(result.category).toBe(staticResult.category);
-      expect(result.category).toBe('simple');
+      expect(result.category).toBe('continue');
+      expect(result.reason).toBe('no classifier answered');
     });
   });
 

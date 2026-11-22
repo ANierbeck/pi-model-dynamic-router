@@ -29,7 +29,6 @@ describe('NON_ROUTING_STAGES', () => {
     'cache',
     'llm-local',
     'llm-cloud',
-    'static',
     'fallback',
   ])('does not contain the routing stage %s', (stage) => {
     expect(NON_ROUTING_STAGES.has(stage)).toBe(false);

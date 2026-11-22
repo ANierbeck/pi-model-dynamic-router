@@ -30,7 +30,8 @@ function throwingCtx(): any {
   return {
     cfg: { model_groups: { standard: { method: 'best' } }, model_metrics: {}, providers: {} },
     cache: {},
-    router: { setActiveGroup: vi.fn(), setCurModel: vi.fn() },
+    router: { setCurModel: vi.fn() },
+    selectionBatch: { begin: () => {}, end: () => {}, commit: () => {} },
     escalation: { level: 'standard' },
     resolve: () => ({ candidates: ['mistral/glm'], selected: 'mistral/glm' }),
     estimateContextTokens: () => {

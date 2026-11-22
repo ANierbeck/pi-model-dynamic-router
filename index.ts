@@ -82,6 +82,16 @@ import { createDynamicConfigRunner } from './src/dynamic-config-runner.ts';
 import { createFreeModelRegistration } from './src/free-model-registration.ts';
 import { createStreamProxy } from './src/stream-proxy.ts';
 import { createGroupRegistration } from './src/group-registration.ts';
+import { registerSelectionModel } from './src/virtual-model.ts';
+import {
+  createPinHandoff,
+  createServedGroups,
+  createSelectionStateSource,
+  dispatchGroupOf,
+  STATE_ENTRY,
+  VIRTUAL_MODEL_ID,
+  VIRTUAL_PROVIDER,
+} from './src/virtual-selection.ts';
 import { createEventHandlers } from './src/event-handlers.ts';
 import { createTools } from './src/tools.ts';
 import { createCommands } from './src/commands.ts';
@@ -233,6 +243,40 @@ const defaultExport = function (pi: ExtensionAPI): void {
     sessionCtx = ctx;
     if (ctx) liveSessions.start(sessionIdOf(ctx) ?? '', ctx);
   };
+
+  // The session's branch state (migration plan step 3): run group, session
+  // group and inherited category persist on pi.virtual-model-state entries, so
+  // a fork and a /tree jump see their own branch's values and a restart keeps
+  // them. The AMBIENT session's manager resolves the io — never the latest
+  // ctx: a subagent child's session_start must not redirect the parent's
+  // mid-turn writes into the child's session file.
+  const ambientCtx = (): ExtensionContext | null => {
+    // currentSessionId() is '' (the default entry) outside any session scope,
+    // not undefined — a falsy sid means scope-less: fall back to the latest
+    // ctx. A REAL sid that is not live (session ended, LRU-evicted) resolves
+    // null — a write must never graft onto another session's branch.
+    const sid = currentSessionId();
+    return sid ? liveSessions.get(sid) : sessionCtx;
+  };
+  const selectionState = createSelectionStateSource({
+    // Batches are per session (one source serves every session).
+    session: () => currentSessionId(),
+    branch: () => ambientCtx()?.sessionManager?.getBranch?.() ?? [],
+    leafId: () => ambientCtx()?.sessionManager?.getLeafId?.() ?? undefined,
+    appendState: (state) => {
+      // The ctx types sessionManager as the Readonly pick; the runtime object
+      // is pi's full SessionManager (appendCustomEntry, session-manager.d.ts).
+      // Reach-through as in src/delegation.ts (registryRuntime.streamSimple).
+      const full = ambientCtx()?.sessionManager as unknown as
+        | { appendCustomEntry?: (customType: string, data?: unknown) => string }
+        | undefined;
+      full?.appendCustomEntry?.(STATE_ENTRY, {
+        provider: VIRTUAL_PROVIDER,
+        modelId: VIRTUAL_MODEL_ID,
+        state,
+      });
+    },
+  });
 
   // Compaction detection state
   let previousMessageCount = 0;
@@ -535,7 +579,7 @@ const defaultExport = function (pi: ExtensionAPI): void {
         isLimited(ref) ? 'rate-limited' : isBreakerOpenFor(ref) ? 'behind an open breaker' : null,
     });
 
-  const { registerGroupProviders, registerGroupModels, declareCacheEconomics } =
+  const { registerGroupProviders, registerGroupModels, declareCacheEconomics, groupContextWindow } =
     createGroupRegistration({
       get cache() {
         return cache;
@@ -564,11 +608,17 @@ const defaultExport = function (pi: ExtensionAPI): void {
     });
 
   createEventHandlers({
+    get pins() {
+      return selectionPins;
+    },
+    get served() {
+      return servedGroups;
+    },
     get activeGroup() {
-      return turn().activeGroup;
+      return selectionState.read()?.group ?? null;
     },
     set activeGroup(v) {
-      turn().activeGroup = v;
+      selectionState.write({ group: v });
     },
     get cache() {
       return cache;
@@ -686,12 +736,17 @@ const defaultExport = function (pi: ExtensionAPI): void {
     },
   });
 
+  // The session's selection (docs/plans/2026-11-21-virtual-models-migration.md,
+  // step 2): `router/dynamic` routes each request to a hidden group model.
+  // The pin handoff exists before every consumer (the tools here, route()
+  // registered after registerGroupProviders() below), so a pin set in a
+  // turn reaches the next route().
+  const selectionPins = createPinHandoff();
+  const servedGroups = createServedGroups();
+
   createTools({
-    get activeGroup() {
-      return turn().activeGroup;
-    },
-    set activeGroup(v) {
-      turn().activeGroup = v;
+    get pins() {
+      return selectionPins;
     },
     get cfg() {
       return cfg;
@@ -714,12 +769,15 @@ const defaultExport = function (pi: ExtensionAPI): void {
     get resolve() {
       return resolve;
     },
-    get router() {
-      return router;
-    },
   });
 
   createCommands({
+    get served() {
+      return servedGroups;
+    },
+    get pins() {
+      return selectionPins;
+    },
     get allDiscoveredRefs() {
       return allDiscoveredRefs;
     },
@@ -1027,6 +1085,18 @@ const defaultExport = function (pi: ExtensionAPI): void {
   metricsModule.loadModelMap(extDir);
   loadCache();
   registerGroupProviders();
+  // Pi reads a virtual model's contextWindow once, at registration: only
+  // now are the config loaded and the dispatch group's spec registered.
+  // load() above assigned cfg; read through a closure like every other reader.
+  const selectionGroups = (): Config['model_groups'] => cfg.model_groups ?? {};
+  const dispatchGroup = dispatchGroupOf(selectionGroups());
+  const selectionWindow = dispatchGroup ? groupContextWindow(dispatchGroup) : undefined;
+  registerSelectionModel(pi, {
+    groups: selectionGroups,
+    pins: selectionPins,
+    served: servedGroups,
+    ...(selectionWindow ? { contextWindow: selectionWindow } : {}),
+  });
 
   // Build the streaming orchestrator context once all helpers are defined.
   // Fields that change mid-session (cfg, cache) are passed as mutable object
@@ -1048,10 +1118,21 @@ const defaultExport = function (pi: ExtensionAPI): void {
     // former ctx.curModel field was write-only dead wiring (final v1.6.0
     // review minor #8).
     get activeGroup(): string | null {
-      return turn().activeGroup;
+      return selectionState.read()?.group ?? null;
     },
     set activeGroup(v) {
-      turn().activeGroup = v;
+      selectionState.write({ group: v });
+    },
+    /**
+     * Batches a request's selection-state writes into one branch entry,
+     * committed when a stream opens (StreamOrchestratorContext.selectionBatch).
+     */
+    get selectionBatch(): { begin: () => void; end: () => void; commit: () => void } {
+      return {
+        begin: () => selectionState.beginBatch(),
+        end: () => selectionState.endBatch(),
+        commit: () => selectionState.commit(),
+      };
     },
     get lastDynamicModel(): string {
       return turn().lastDynamicModel;
@@ -1060,10 +1141,10 @@ const defaultExport = function (pi: ExtensionAPI): void {
       turn().lastDynamicModel = v;
     },
     get runGroup(): string | null {
-      return turn().runGroup;
+      return selectionState.read()?.runGroup ?? null;
     },
     set runGroup(v) {
-      turn().runGroup = v;
+      selectionState.write({ runGroup: v });
     },
     get runDriver(): string {
       return turn().runDriver;
@@ -1072,10 +1153,12 @@ const defaultExport = function (pi: ExtensionAPI): void {
       turn().runDriver = v;
     },
     get lastClassifiedCategory(): ClassificationResult['category'] | undefined {
-      return turn().lastClassifiedCategory;
+      // The branch stores what a classifier wrote (the set is validated
+      // upstream); the union cast keeps the orchestrator's contract.
+      return selectionState.read()?.lastCategory as ClassificationResult['category'] | undefined;
     },
     set lastClassifiedCategory(v) {
-      turn().lastClassifiedCategory = v;
+      selectionState.write({ lastCategory: v });
     },
     /** ADR-0027 Phase 2: decision-log turn id `<session>#<seq>` of the current turn. */
     turnId: () => `${currentSessionId() || 'default'}#${turn().turnSeq}`,
@@ -1205,6 +1288,13 @@ const defaultExport = function (pi: ExtensionAPI): void {
 
   const streamOrchestrator = new StreamOrchestrator(buildOrchestratorContext());
 
+  // A /tree jump moves the session to another branch: the group route()
+  // served last belongs to the branch left behind, so the footer falls back
+  // to the new branch's stored pin until the next request.
+  pi.on('session_tree', (_ev, ctx) => {
+    servedGroups.forget(sessionIdOf(ctx));
+  });
+
   pi.on('session_shutdown', (_ev, ctx) => {
     const id = sessionIdOf(ctx) ?? '';
     // Only THIS session's state goes: a child's shutdown must not wipe the
@@ -1214,6 +1304,10 @@ const defaultExport = function (pi: ExtensionAPI): void {
     router.setSessionCtx(remaining);
     turnStates.reset(id);
     routerTurnStates.reset(id);
+    // The selection layer's per-session records go with it: a pin the
+    // session never routed again must not wait for a reused id.
+    selectionPins.forget(id);
+    servedGroups.forget(id);
     // lastClassifiedCategory is conversation state — it must not leak into the
     // next session's first 'continue' classification (PR #70 review); it goes
     // with the session's entry.

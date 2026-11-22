@@ -23,6 +23,7 @@ function baseRt(opts: { resolveApiKey: (p: string) => Promise<string | null> }) 
       },
     } as unknown as Config,
     pi: {
+      registerVirtualModel: vi.fn(),
       registerProvider,
     },
     sessionCtx: {

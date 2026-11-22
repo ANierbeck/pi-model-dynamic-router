@@ -81,7 +81,6 @@ describe('classifyPrompt — local models come from the derived chain', () => {
     vi.mocked(callOllama).mockRejectedValue(new Error('timeout'));
     await classifyPrompt(prompt('single'), {
       cache: cacheWith('foo:3b'),
-      allowStaticFallback: true,
     });
     expect(calledModels()).toEqual(['foo:3b']);
   });
@@ -107,10 +106,9 @@ describe('classifyPrompt — local models come from the derived chain', () => {
     expect(callOllama).not.toHaveBeenCalled();
   });
 
-  it('no local models and cloud failing: no Ollama hop either, static classifier answers', async () => {
+  it('no local models and cloud failing: no Ollama hop either, the fallback answers', async () => {
     const r = await classifyPrompt(prompt('no-local-static'), {
       cache: {} as Cache,
-      allowStaticFallback: true,
     });
     expect(r.category).toBeTruthy();
     expect(isOllamaAvailable).not.toHaveBeenCalled();

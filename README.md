@@ -33,8 +33,10 @@ ln -s ~/pi-model-dynamic-router ~/.pi/agent/extensions/pi-model-dynamic-router
    (see [Adding a Provider](#adding-a-provider)).
 2. Run `/reload` in pi — the router discovers models, prices, and quality
    scores automatically.
-3. Switch your session to a group: `simple`, `standard`, `code_complex`,
-   `design`, `planning`, or `dynamic` (content-classified per prompt).
+3. Select `router/dynamic` ("Router (dynamic)") with `/model` — the router
+   classifies every prompt and serves it from the matching group (`simple`,
+   `standard`, `code_complex`, `design`, `planning`). To stay on one group,
+   pin it with the `set_model_from_group` tool.
 
 The shipped defaults need no configuration. To personalize, see
 [Personalized configuration](#personalized-configuration) below — or jump
@@ -242,7 +244,7 @@ To use the **`dynamic`** group, you need:
 - No classifier model is shipped or required by name: after each scan the router **derives** the local chain from the models Ollama reports (completion-capable, no embedding-only models, no model that answers a classification with HTTP 501 "structured output is unavailable"), orders them by parameter size (small = fast), and **probes** them with the same classification cases the cloud chain uses. The verified list is the chain (`/router` shows the heads; "none yet" until a scan ran). Pin your own with `classifier.local.model` / `classifier.local.fallback` in the `classifier` block of `router-config.user.json` (e.g. `"ollama/<model>:<tag>"`).
 - Ollama accessible from your system (default: `http://localhost:11434`)
 
-Local first (ADR 0032, 2026-11-14): with `classifier.cloud.enabled: true` (set in the shipped `classifier` block) the classifier runs the local Ollama chain first, and a usable local answer is final. Only when the local leg produces no answer (or, with the opt-in `classifier.cloud.escalate_low_confidence` on, a low-confidence one) does the cloud chain run, trying in order: pinned `classifier.cloud.model` → the scan-time probe-verified list → lazy discovery over Pi's model registry (output price at most $5 per million tokens, or a $0 catalog placeholder; at most 20 candidates) → the static `free_models` list (see [Data handling & privacy](#data-handling--privacy)). If every candidate fails, the static keyword classifier runs when the request uses a `<group>:use-static` model; otherwise the classification falls back to the `continue` category (routed to `standard`).
+Local first (ADR 0032, 2026-11-14): with `classifier.cloud.enabled: true` (set in the shipped `classifier` block) the classifier runs the local Ollama chain first, and a usable local answer is final. Only when the local leg produces no answer (or, with the opt-in `classifier.cloud.escalate_low_confidence` on, a low-confidence one) does the cloud chain run, trying in order: pinned `classifier.cloud.model` → the scan-time probe-verified list → lazy discovery over Pi's model registry (output price at most $5 per million tokens, or a $0 catalog placeholder; at most 20 candidates) → the static `free_models` list (see [Data handling & privacy](#data-handling--privacy)). If every candidate fails, the classification falls back to the `continue` category (routed to `standard`).
 
 #### Local Laya classifier stage (experimental)
 
@@ -293,7 +295,7 @@ When a model fails (API error, rate limit, empty response, or usage limit exceed
    (the global order; every shipped group also carries its own `fallback_groups` chain, which wins over it)
 3. **Continues until a working model is found**
 
-**Example:** You select `dynamic` group, but the first model hits a rate limit → router automatically tries the next `dynamic` model → if all fail, tries the group's fallback chain (e.g. `standard` → `simple`).
+**Example:** A request is classified into a group, but the first model hits a rate limit → router automatically tries the next `dynamic` model → if all fail, tries the group's fallback chain (e.g. `standard` → `simple`).
 
 #### Configuration
 
@@ -399,7 +401,7 @@ All scanning is async and non-blocking.
 
 - **The router never reads or writes Pi's credential store (ADR-0022).** No API key, key reference, or auth-file pointer is stored in `router-config.json` or resolved by the router — Pi owns credential resolution end-to-end. (Legacy `keys` arrays in older router-config files are ignored, never read.)
 - **Prompt text leaves the machine only when the local chain gives no answer** — or, with the opt-in `classifier.cloud.escalate_low_confidence` on, a low-confidence one (see below). The shipped `classifier` block sets `classifier.cloud.enabled: true`, so a prompt goes to a cloud model from Pi's model registry only after the local Ollama chain produced no answer (or, with escalation on, one below confidence 0.5). The cloud candidates are the pinned `classifier.cloud.model` if set, else the scan-time probe-verified list, else lazy discovery (output price at most $5 per million tokens, or a $0 catalog placeholder; at most 20 candidates), else the static `free_models` list. Models of excluded providers, `paid_models_from` providers, and models that are currently unhealthy or blocklisted are skipped. Cloud candidates are not limited to free models: the price ceiling decides eligibility.
-- **Keeping prompts on the machine.** Run `/router config set classifier.cloud.enabled off`, or set `"classifier": { "cloud": { "enabled": false } }` in `router-config.user.json` (the user layer overrides the shipped value). `classifier.cloud.enabled` is an on/off switch for the cloud fallback leg; it does not set the order, which is always local first. With it off, the classifier uses only the local Ollama chain and, when the request uses a `<group>:use-static` model, static keyword classification. The opt-in local Laya stage (`integrations.laya`) runs before either chain and talks only to a loopback sidecar.
+- **Keeping prompts on the machine.** Run `/router config set classifier.cloud.enabled off`, or set `"classifier": { "cloud": { "enabled": false } }` in `router-config.user.json` (the user layer overrides the shipped value). `classifier.cloud.enabled` is an on/off switch for the cloud fallback leg; it does not set the order, which is always local first. With it off, the classifier uses only the local Ollama chain; when no hop answers, the request gets the `continue` category. The opt-in local Laya stage (`integrations.laya`) runs before either chain and talks only to a loopback sidecar.
 - **Choosing the cloud classifier models yourself.** Set `classifier.cloud.candidates` to a list of `provider/id` refs, with `/router config set` or as `"classifier": { "cloud": { "candidates": ["provider/id", …] } }` in `router-config.user.json`. The list replaces the automatic cloud candidates (probe-verified list, lazy discovery, static `free_models`) and is tried in the given order. `classifier.cloud.model`, if also set, still goes first. Exclude rules and the paid guards still apply, and the list is used only when `classifier.cloud.enabled` is on. The shipped config sets no list.
 - **Escalating low-confidence local replies (opt-in, off by default).** Set `classifier.cloud.escalate_low_confidence` to `true`, with `/router config set` or in `router-config.user.json`. A local reply below confidence 0.5 is then sent once to the cloud chain (which needs `classifier.cloud.enabled` on); a cloud answer replaces it, and if the cloud produces nothing, the local reply is kept. Off by default, so prompt text is not sent to a cloud model for low-confidence local answers. See ADR 0033.
 - **Saved HINT corrections stay local, as raw prompt text.** `HINT: category <name> <prompt>` stores the prompt text (at least five words) as an exact-match key in the scan cache file, which is written owner-only (mode 0600). The store is capped at 64 entries and is never sent anywhere; `/router corrections clear` removes them (see "Correcting a category" above).
@@ -409,13 +411,27 @@ All scanning is async and non-blocking.
 
 ### Group Selection
 
-**Resumed sessions keep their group.** After `pi --continue`, `/resume` or
-`/fork`, Pi would restore the concrete model that answered last (it only keeps
-a selection of its own *virtual* models across later replies). When the branch
-selected a router group and no other model was chosen since, the router selects
-that group again at session start. A deliberate `/model` switch to a concrete
-model is kept. Not restored: print mode (`pi -p --continue`), and an explicit
-`--model` that names exactly the model that answered last.
+**One selectable model: `router/dynamic`.** The router registers a single Pi
+virtual model, `router/dynamic`. Each request it routes goes to a group's
+hidden model (`<group>/<group>`), which walks that group's candidates. The
+group models are not listed in `/model` or in scoped models
+(`enabledModels`). Because the selection is a virtual model, Pi keeps it
+across replies, `--continue`, `/resume`, `/fork` and `/tree`.
+
+**Pinning a group.** `set_model_from_group` with a group name pins that group
+for the session: `router/dynamic` serves every request from it, and the
+session's model stays `router/dynamic`. `none` (or `dynamic`) releases the
+pin. The pin, the previous turn's category, the tool follow-up run and the
+group the last request was routed to are stored on the session branch, so a
+fork or `/tree` jump sees its own values and a restart keeps them. That group
+(after a failed walk, the `fallback_groups` entry that took over) also selects the
+per-group `context_budget`.
+
+**Older sessions and `--model`.** `--model <group>/<group>` and a settings
+default naming a group still resolve. An interactive session on a group model
+moves to `router/dynamic` at start, with that group pinned (`dynamic/dynamic`
+moves unpinned). So does a pre-2.0.0 session whose branch selected a group.
+Headless sessions (print mode, pi-subagents children) keep the group model.
 
 Each group auto-discovers available models, filters by quality, and selects
 by billing preference. The shipped groups (see `router-config.json`):
@@ -554,7 +570,7 @@ When a streaming response fails mid-stream (empty body, connection drop, timeout
 
 ### Delegating subtasks to cheap groups (Pi subagents)
 
-The router only resolves a group name to the best available model *for a single completion request* — it has no concept of "split this task into subtasks and run the cheap ones on a cheap model." That kind of decomposition belongs one layer up, in [Pi's subagent system](https://github.com/earendil-works/pi-subagents), which can already address any configured group directly by model ref: every group is registered as its own provider, so `<group>/<group>` (e.g. `simple/simple`, `standard/standard`, `planning/planning`) is a valid `model` value for `subagent(...)` calls, exactly like any other provider/model pair Pi knows about.
+The router only resolves a group name to the best available model *for a single completion request* — it has no concept of "split this task into subtasks and run the cheap ones on a cheap model." That kind of decomposition belongs one layer up, in [Pi's subagent system](https://github.com/earendil-works/pi-subagents), which can already address any configured group directly by model ref: every group is registered as its own provider, so `<group>/<group>` (e.g. `simple/simple`, `standard/standard`, `planning/planning`) is a valid `model` value for `subagent(...)` calls. The group models are hidden from `/model`, but Pi still resolves them by ref, and a headless subagent child stays on the group it was given.
 
 This lets you fan out I/O-heavy work (reading/summarizing several files) to a cheap group in parallel, then run one expensive-group call over the collected results — without any router code changes:
 
@@ -904,7 +920,7 @@ watchdog wedge events and classifier health.
 
 | Tool | Purpose |
 |------|---------|
-| `set_model_from_group` | Switch session to best model from a group |
+| `set_model_from_group` | Pin a group for the session (`router/dynamic` only); `none` releases the pin |
 | `resolve_model_group` | Preview what a group would resolve to |
 | `update_model_metrics` | Manual metric override |
 | `bulk_read` | Answer a question about files via a cheap reader model, without loading their content into the session context |
@@ -977,7 +993,8 @@ reload-time swaps are always seen — never stale closure captures:
 
 The final `session_shutdown` handler and process-exit/signal cleanup stay at the
 bottom of index.ts (handler order is load-bearing). The router never calls
-`pi.setModel()` except in the `set_model_from_group` tool.
+`pi.setModel()` except once at `session_start`, to move a session on a group
+model to `router/dynamic` (`test/no-router-setmodel-static.test.ts`).
 
 This modular design enables better maintainability, testing, and extensibility.
 

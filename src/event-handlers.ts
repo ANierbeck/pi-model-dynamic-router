@@ -15,7 +15,15 @@ import { costTracker } from './cost-tracker.ts';
 import { handleReadDelegation } from './delegation.ts';
 import { runAsSubCall } from './subcall-scope.ts';
 import { setProjectLogDir, debugLog, routerLog, warnLog } from './logger.ts';
-import { branchThinkingLevel, groupToRestore } from './session-restore.ts';
+import { branchThinkingLevel, groupSelectionToMigrate } from './legacy-session-restore.ts';
+import {
+  VIRTUAL_PROVIDER,
+  VIRTUAL_MODEL_ID,
+  dispatchGroupOf,
+  sessionGroupOf,
+  type PinHandoff,
+  type ServedGroups,
+} from './virtual-selection.ts';
 import * as metricsModule from './metrics.ts';
 import { setPiRegisteredProviders, setModelRegistry } from './metrics.ts';
 import { countSessionErrorsSince } from './session-errors.ts';
@@ -63,6 +71,10 @@ interface EventHandlerDeps {
   readonly load: () => void;
   readonly loadCache: () => void;
   readonly pi: ExtensionAPI;
+  /** Pins `set_model_from_group` set during a turn (the selection layer's). */
+  readonly pins: PinHandoff;
+  /** The group route() last dispatched each session to (the footer's group on router/dynamic). */
+  readonly served: ServedGroups;
   readonly rateLimitManager: RateLimitManager;
   readonly recordOk: (ref: string) => void;
   readonly registerGroupModels: (ctx: ExtensionContext) => void;
@@ -123,15 +135,20 @@ function inSessionOf<E, R>(
 }
 
 /**
- * `pi --continue` / `/resume` / `/fork` on a router session: Pi restores the
- * physical model that answered last instead of the group (a `model_change`
- * only outlives later replies for Pi virtual models). Select the group again
- * (docs/plans/2026-11-21-continue-restores-group.md). Runs after the group
- * models are registered, so the registry knows the group model.
+ * Move a session onto the virtual selection (plan
+ * docs/plans/2026-11-21-virtual-models-migration.md step 2, spike condition
+ * F7): an old session, whose selection was a group model, so Pi restored the
+ * physical model that answered last, or a session that starts on a hidden
+ * group model (settings default, `--model`) — src/legacy-session-restore.ts.
+ * Select `router/dynamic` — Pi rewrites the branch's last selection — and
+ * pin a group other than the classifying one for the next route(). Runs
+ * after the group models are registered, so the registry knows the group
+ * model.
  */
-async function restoreGroupSelection(
+async function restoreVirtualSelection(
   rt: EventHandlerDeps,
   ctx: ExtensionContext,
+  pins: PinHandoff,
   pendingRestore: { ref: string | null }
 ): Promise<void> {
   // Only a session with a UI (TUI/RPC). pi-subagents starts forked children
@@ -139,33 +156,57 @@ async function restoreGroupSelection(
   // given exactly the model that answered the parent last would look like
   // Pi's fallback, and its explicit model must win.
   if (ctx.hasUI !== true) return;
-  const groupNames = new Set(Object.keys(rt.cfg.model_groups ?? {}));
+  const groups = rt.cfg.model_groups ?? {};
+  const groupNames = new Set(Object.keys(groups));
   const branch = ctx.sessionManager?.getBranch?.() ?? [];
-  const target = groupToRestore(branch, ctx.model, groupNames);
+  const target = groupSelectionToMigrate(branch, ctx.model, groupNames);
   if (!target) return;
-  const model = ctx.modelRegistry.find(target.provider, target.modelId);
-  if (!model) return;
-  const ref = `${target.provider}/${target.modelId}`;
+  // Two paths (groupSelectionToMigrate): the session is ON a group model (a
+  // fresh start on the settings default or --model, or a resume that
+  // restored the group), or Pi fell back from a pre-migration group
+  // selection to the physical model that answered last.
+  const onGroup = ctx.model?.provider === target.provider && ctx.model?.id === target.modelId;
+  const prefix = onGroup
+    ? `[router] session on group model ${target.provider}/${target.modelId}:`
+    : '[router] resumed session:';
+  const selection = ctx.modelRegistry.find(VIRTUAL_PROVIDER, VIRTUAL_MODEL_ID);
+  if (!selection) {
+    warnLog(`${prefix} router/dynamic is not registered; keeping the model`);
+    return;
+  }
+  const groupModel = ctx.modelRegistry.find(target.provider, target.modelId);
+  if (!groupModel) return;
   // ctx.model is a live getter: capture what Pi restored before the switch.
   const restored = ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : '(none)';
   // Pi's setModel takes the thinking level from the settings; Pi's resume
   // takes it from the branch. Put the branch's level back after the switch.
   const level = branchThinkingLevel(branch);
   // The switch emits model_select (source "set"): not a user pick.
-  pendingRestore.ref = ref;
+  pendingRestore.ref = `${VIRTUAL_PROVIDER}/${VIRTUAL_MODEL_ID}`;
   try {
-    const ok = await rt.pi.setModel(model);
+    const ok = await rt.pi.setModel(selection);
     if (!ok) {
-      warnLog(`[router] resumed session: could not select ${ref} again`);
+      warnLog(`${prefix} could not select router/dynamic again`);
       return;
     }
+    // The selected group becomes the next route()'s pin; the classifying
+    // group means none, which also releases a pin the branch stored earlier
+    // (an explicit `--model dynamic/dynamic` on a pinned branch). Only after
+    // the switch: a pin for a failed one would wait in the handoff and fire
+    // on a later selection.
+    const pin = target.provider === dispatchGroupOf(groups) ? null : target.provider;
+    pins.set(sessionIdOf(ctx), pin);
     if (level && rt.pi.getThinkingLevel() !== level) {
       rt.pi.setThinkingLevel(level as Parameters<typeof rt.pi.setThinkingLevel>[0]);
     }
-    routerLog(`[router] resumed session: selected ${ref} again (Pi restored ${restored})`);
+    routerLog(
+      onGroup
+        ? `[router] session on group model ${target.provider}/${target.modelId} moved to ${VIRTUAL_PROVIDER}/${VIRTUAL_MODEL_ID} (${pin ? `pinned ${pin}` : 'no pin'})`
+        : `[router] resumed session: pre-migration selection ${target.provider}/${target.modelId}, routed via ${VIRTUAL_PROVIDER}/${VIRTUAL_MODEL_ID} (Pi restored ${restored})`
+    );
   } catch (err: unknown) {
     warnLog(
-      `[router] resumed session: selecting ${ref} failed: ${err instanceof Error ? err.message : textOf(err)}`
+      `${prefix} selecting router/dynamic failed: ${err instanceof Error ? err.message : textOf(err)}`
     );
   } finally {
     pendingRestore.ref = null;
@@ -260,7 +301,7 @@ export function createEventHandlers(rt: EventHandlerDeps): void {
       rt.registerGroupModels(ctx);
       // Returned below: Pi awaits session_start, so a prompt sent right after
       // the start already reaches the restored group.
-      const restoring = restoreGroupSelection(rt, ctx, pendingRestore);
+      const restoring = restoreVirtualSelection(rt, ctx, rt.pins, pendingRestore);
       // scan() swallows per-provider failures by design, but a top-level
       // throw (e.g. from checkScanSanity or saveCache) must not disappear
       // silently (final v1.6.0 review minor #6).
@@ -291,16 +332,19 @@ export function createEventHandlers(rt: EventHandlerDeps): void {
 
         function renderFooter(w: number): string[] {
           const ref = ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : '';
-          // The router never swaps the session's active model (see driveStream) —
-          // ctx.model stays the virtual group model (e.g. "standard/standard") for
-          // the whole session. Detect that here so the footer can show the actually
-          // resolved model (lastDynamicModel, updated by driveStream on every
-          // successful stream) instead of the static virtual model id.
-          const groupBase = ctx.model?.id?.replace(/:use-static$/, '');
-          const isGroupModel = groupBase
-            ? Object.prototype.hasOwnProperty.call(rt.cfg.model_groups, groupBase)
-            : false;
-          const grp = isGroupModel ? groupBase! : ref ? rt.detectGroup(ref) : null;
+          // ctx.model is the selection — `router/dynamic`, or a group model on
+          // a session that never migrated — not the model that served. Show
+          // the session's group (sessionGroupOf: on `router/dynamic` the group
+          // route() last dispatched to) and the resolved model
+          // (lastDynamicModel, updated by driveStream on every successful
+          // stream) instead of the selection's id.
+          const groupBase = sessionGroupOf(ctx.model, sessionIdOf(ctx), rt.cfg.model_groups ?? {}, {
+            served: rt.served,
+            pins: rt.pins,
+            branch: ctx.sessionManager?.getBranch?.() ?? [],
+          });
+          const isGroupModel = groupBase !== null;
+          const grp = groupBase ?? (ref ? rt.detectGroup(ref) : null);
           const m = ref
             ? rt.getM(isGroupModel && rt.lastDynamicModel ? rt.lastDynamicModel : ref)
             : null;

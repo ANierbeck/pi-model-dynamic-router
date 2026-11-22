@@ -10,6 +10,7 @@ import { existsSync, renameSync } from 'node:fs';
 import { join } from 'node:path';
 import { vi } from 'vitest';
 import { flushBackgroundScan } from './noop-scan-cache.ts';
+import { providerCall } from './provider-calls.ts';
 
 export type EventHandlers = Record<string, (ev: any, ctx: any) => any>;
 
@@ -21,16 +22,42 @@ export interface ExtensionContextHarness {
 }
 
 /**
+ * A fake pi SessionManager over an in-memory entries array — enough of the
+ * real entry semantics for the router's branch reads/writes (custom entries
+ * of type `custom` + `customType`, leaf id = the last entry's id).
+ */
+export function fakeSessionManager(initial: unknown[] = []): any {
+  let entries: any[] = [...initial];
+  let nextId = 1;
+  return {
+    __dbgId: Math.random().toString(36).slice(2, 8),
+    getSessionId: () => 'harness-session',
+    getBranch: () => [...entries],
+    getEntries: () => [...entries],
+    getLeafId: () => entries[entries.length - 1]?.id,
+    appendCustomEntry: (customType: string, data: unknown) => {
+      const id = `e${nextId++}`;
+      entries = [...entries, { id, type: 'custom', customType, data }];
+      return id;
+    },
+  };
+}
+
+/**
  * A mocked ExtensionContext with the registrars every router test needs.
  * No caller varies the shape today (all 15 pass nothing); a test that needs
  * `modelRegistry`, `cwd` or `ui` re-declares just that field on `ctx` — the
- * point of the helper is the registrar block, not a config surface.
+ * point of the helper is the registrar block, not a config surface. The
+ * default sessionManager is a fakeSessionManager: since the branch state
+ * (migration plan step 3) the router persists per-session state through it.
  */
 export function makeExtensionContext(): ExtensionContextHarness {
   const onHandlers: EventHandlers = {};
   const ctx: any = {
+    sessionManager: fakeSessionManager(),
     registerTool: vi.fn(),
     registerCommand: vi.fn(),
+    registerVirtualModel: vi.fn(),
     registerProvider: vi.fn(),
     setModel: vi.fn(async () => true),
     on: vi.fn((event: string, handler: (ev: any, ctx: any) => any) => {
@@ -59,6 +86,9 @@ export function makeSessionCtx(options: SessionCtxOptions & { ui?: any }): any {
   return {
     modelRegistry: options.modelRegistry,
     cwd: options.cwd,
+    // Real pi session ctxs always carry the session's SessionManager — the
+    // router persists per-session state on it (migration plan step 3).
+    sessionManager: fakeSessionManager(),
     ui: options.ui ?? { setFooter: vi.fn() },
   };
 }
@@ -83,8 +113,9 @@ export function makeObservableExtensionContext(): ObservableExtensionContext {
   const ctx: any = {
     registerTool: vi.fn(),
     registerCommand: vi.fn(),
-    registerProvider: vi.fn((name: string, opts: any) => {
-      registerProviderCalls.push({ name, opts });
+    registerVirtualModel: vi.fn(),
+    registerProvider: vi.fn((name: any, opts?: any) => {
+      registerProviderCalls.push(providerCall(name, opts));
     }),
     setModel: vi.fn(async () => true),
     on: vi.fn((event: string, handler: (ev: any, ctx: any) => any) => {
@@ -206,6 +237,7 @@ export function makePiCtx(overrides: PiCtxOverrides = {}): {
   const pi: any = {
     registerTool: overrides.registerTool ?? vi.fn(),
     registerCommand: overrides.registerCommand ?? vi.fn(),
+    registerVirtualModel: vi.fn(),
     registerProvider: overrides.registerProvider ?? vi.fn(),
     setModel: overrides.setModel ?? vi.fn(async () => true),
     on: vi.fn((event: string, handler: (ev: any, ctx: any) => any) => {

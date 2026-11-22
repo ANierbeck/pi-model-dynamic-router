@@ -18,9 +18,9 @@ const stepOf = (steps: ReturnType<typeof describeClassifierChain>, id: string) =
 };
 
 describe('describeClassifierChain', () => {
-  it('lists the four legs in the fixed order, with the step ids the docs pin', () => {
+  it('lists the three legs in the fixed order, with the step ids the docs pin', () => {
     const steps = describeClassifierChain(base());
-    expect(steps.map((s) => s.id)).toEqual(['laya', 'ollama', 'cloud', 'static']);
+    expect(steps.map((s) => s.id)).toEqual(['laya', 'ollama', 'cloud']);
   });
 
   it('shows Laya off when the integration is not enabled', () => {

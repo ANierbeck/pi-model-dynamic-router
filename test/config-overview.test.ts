@@ -30,7 +30,7 @@ describe('/router config — overview', () => {
     expect(out).toMatch(/Laya: off/);
     expect(out).toMatch(/Local \(Ollama\): on/);
     expect(out).toMatch(/Cloud: on/);
-    expect(out).toMatch(/Static rules: off/);
+    expect(out).not.toMatch(/Static rules/);
   });
 
   it('shows one summary line per integration, with the command that switches it', async () => {
