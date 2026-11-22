@@ -221,6 +221,7 @@ Modules without their own heading above. One row per file, so every `src/` modul
 | `src/context-utils.ts` | Context and prompt inspection helpers, per-model timeout lookups (extracted from `index.ts`) |
 | `src/cost-tracker.ts` | `CostTracker`: per-request, per-model and daily cost summary |
 | `src/delegation.ts` | Enforced delegation (ADR-0007): summarizes oversized `read`/`bash` results before the main model sees them |
+| `src/worker-step.ts` | `worker_step` tool (long-turn plan Phase 2): one mechanical task per call to the cheap delegation group, text-only sub-call |
 | `src/dynamic-config-runner.ts` | Generates the dynamic config from scan data, extracted from `index.ts` |
 | `src/dynamic-config.ts` | Dynamic config logic: what the scan writes into `router-config.dynamic.json` |
 | `src/error-signatures.ts` | Stable reason keys for permanent and request-level error verdicts |

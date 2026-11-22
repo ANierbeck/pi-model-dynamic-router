@@ -95,6 +95,7 @@ describe('fresh-session suggestion', () => {
 
 // ── Task 2: the suggestion surfaces through the 5b hint channel ──────────
 import {
+  HINT_COOLDOWN_MS,
   noteSessionCompaction,
   runContextCompaction,
   type CompactionRunState,
@@ -282,13 +283,68 @@ describe('fresh-session wiring (5b hint channel)', () => {
     expect(after!.stepsThisSession).toBe(2);
   });
 
-  it('the status line names the trigger and the command', () => {
+  it('the status line names the trigger, the command, and that the command waits for the turn', () => {
     expect(
       freshStatusLine({
         suggest: true,
         reason: 'compaction is not sticking: context grew back; a fresh session wins',
       })
-    ).toMatch(/^fresh session suggested — compaction is not sticking.*\/router fresh$/s);
+    ).toMatch(
+      /^fresh session suggested — compaction is not sticking.*\/router fresh \(runs after the current turn\)$/s
+    );
     expect(freshStatusLine({ suggest: false })).toBe('');
+  });
+});
+
+describe('fresh hint: once per reason per session (busy-session plan)', () => {
+  const call = (
+    state: any,
+    now: number,
+    compactionsRun: number,
+    usage?: { cacheRead: number; ts: number }
+  ) => {
+    const notify = vi.fn();
+    const usageLog = [
+      { ref: 'x/y', tokens: 100, ts: usage?.ts ?? now - 1_000, cacheRead: usage?.cacheRead ?? 90 },
+    ];
+    const ctx = {
+      getContextUsage: () => ({ tokens: 150_000, contextWindow: 200_000 }),
+      compact: vi.fn(),
+      ui: { notify },
+    };
+    const cfg = {
+      context_budget: {
+        enabled: false,
+        soft_tokens: 100_000,
+        hard_tokens: 200_000,
+        cache_ttl_s: 300,
+        fresh_session: { enabled: true },
+      },
+    } as unknown as Config;
+    runContextCompaction({
+      ctx,
+      cfg,
+      activeGroup: null,
+      usageLog,
+      state,
+      stepsThisSession: 40,
+      now,
+    });
+    return notify;
+  };
+
+  it('the same reason does not re-fire after the cooldown; a new reason does', () => {
+    const state: any = {
+      lastHintAt: 0,
+      compactionsRun: 2,
+      turnSeqAtStart: 0,
+      lastFreshReason: null,
+    };
+    const n1 = call(state, now, 2);
+    expect(n1).toHaveBeenCalledTimes(1);
+    const n2 = call(state, now + HINT_COOLDOWN_MS, 2); // same reason: stuck
+    expect(n2).not.toHaveBeenCalled(); // RED: current code re-fires on the cooldown alone
+    const n3 = call(state, now + 2 * HINT_COOLDOWN_MS, 0, { cacheRead: 5, ts: now - 20 * 60_000 }); // idle reason
+    expect(n3).toHaveBeenCalledTimes(1); // RED: different reason must fire
   });
 });

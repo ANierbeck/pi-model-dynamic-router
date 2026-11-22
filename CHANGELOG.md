@@ -11,6 +11,18 @@ without the owner's explicit release approval).
 
 ### Added
 
+- **`worker_step` tool** (plan `docs/plans/2026-11-21-long-turn-model-use.md`,
+  Phase 2): hand one fully specified mechanical task to the cheap delegation
+  group as a text-only sub-call. Measured need: 83 % of steps in long turns
+  (50+ steps) are mechanical and hold 52 % of all tokens
+  (`docs/research/2026-11-21-long-turn-profile.md`).
+
+- **`/router fresh` waits for the running turn** (plan
+  `docs/plans/2026-11-21-busy-session-fresh.md`): instead of aborting the turn
+  it was typed into, the command waits up to three times and then interrupts
+  once; a skeleton handoff is announced as such; the fresh-session hint fires
+  once per reason per session and says the command runs after the current turn.
+
 - **Pi's `cacheWarming` setting is honored in router sessions** (plan
   `docs/plans/2026-11-20-honor-pi-cache-warming.md`, owner decision 2026-11-20:
   the router must not behave differently from a Pi setting the user chose).

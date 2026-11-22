@@ -10,6 +10,7 @@
  */
 
 import { executeBulkRead } from './bulk-read.ts';
+import { runWorkerStep } from './worker-step.ts';
 import { routerLog } from './logger.ts';
 import { runAsSubCall } from './subcall-scope.ts';
 import { runInSession, sessionIdOf } from './turn-state.ts';
@@ -103,6 +104,42 @@ export function createTools(rt: ToolDeps): void {
         ...result,
         details: { tool: 'bulk_read', files: params.paths.length },
       };
+    },
+  });
+
+  // worker_step (long-turn plan Phase 2, 2026-11-21): one fully specified
+  // MECHANICAL task per call, answered by the cheap delegation group as a
+  // text-only sub-call. Replaces a run of expensive mechanical steps.
+  // Registered unconditionally; when delegation is off the call throws and
+  // the model does the step itself (same contract as bulk_read).
+  rt.pi.registerTool({
+    name: 'worker_step',
+    label: 'Worker Step',
+    description:
+      'Hand ONE fully specified mechanical task (filter or interpret text you already have, check a list, summarize a log block, classify an error) to a cheap worker model and get only its result back. The worker has no tools — it cannot run commands or read files, so never ask it to. Use it instead of spending several of your own steps on mechanical work. When delegation is disabled this call fails and you do the step yourself.',
+    promptSnippet: 'Offload a mechanical text task to a cheap worker model',
+    promptGuidelines: [
+      'Use worker_step for mechanical, fully specified text work (extract, filter, summarize, classify) instead of doing it step by step yourself; give the worker ALL the material it needs in the task — it cannot read files or run commands.',
+    ],
+    parameters: Type.Object({
+      task: Type.String({
+        description:
+          'The complete mechanical task, including all material the worker needs (it has no tools and no file access)',
+      }),
+    }),
+    async execute(
+      _id: string,
+      params: { task: string },
+      _signal: AbortSignal | undefined,
+      _onUpdate: unknown,
+      ctx: ExtensionContext
+    ) {
+      // The worker stream is a SUB-CALL: it must not become the turn's model
+      // (see src/subcall-scope.ts).
+      const result = await runInSession(sessionIdOf(ctx), () =>
+        runAsSubCall(() => runWorkerStep(params.task, ctx, rt.cfg, routerLog))
+      );
+      return { ...result, details: { tool: 'worker_step' } };
     },
   });
 

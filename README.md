@@ -924,6 +924,7 @@ watchdog wedge events and classifier health.
 | `resolve_model_group` | Preview what a group would resolve to |
 | `update_model_metrics` | Manual metric override |
 | `bulk_read` | Answer a question about files via a cheap reader model, without loading their content into the session context |
+| `worker_step` | Hand one fully specified mechanical text task (filter, summarize, classify; max 20,000 chars, all material inline — the worker has no tools) to the cheap delegation group; fails when delegation is off |
 
 The `dynamic` group has no dedicated tools — classification runs automatically
 inside the group's resolve path (`src/content-classifier.ts`).

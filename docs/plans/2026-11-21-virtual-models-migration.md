@@ -5,12 +5,15 @@ every item, two conditions (`docs/research/2026-11-21-router-shape-spike.md`).
 The owner then decided to migrate for 2.0.0 with the virtual layer as the only
 path (open decisions 1, 2 and 4 below). Steps 2, 3 and 5 are built before
 2.0.0; step 4 (the owner's live phase) is the gate for proposing the release.
-Steps 2, 3 and 5 built on `feat/virtual-selection` (2026-11-21), not yet
-merged (review rounds 1–2 clean; steps 3 and 5 in review). Step 4 (owner live
-phase) is open.
+Steps 2, 3 and 5 merged to `main` on 2026-11-22 (PR #207, merge commit
+`5ffda4d`; review rounds clean up to `4e52759`, the two follow-up fixes
+`174108c`/`2715ba7` were not in a review round). Step 4 (owner live phase)
+runs since 2026-11-21, first on the worktree build, since 2026-11-22 on
+`main`; it stays open until the owner closes it.
 
-**Verified against:** `main` @ `36ddef3` (steps 2, 3 and 5: branch
-`feat/virtual-selection` @ `1c6a00d`); pi-coding-agent 1.6.0:
+**Verified against:** `main` @ `5ffda4d` for the status line (PR #207 merged);
+the step descriptions were checked against `main` @ `36ddef3` (steps 2, 3
+and 5: branch `feat/virtual-selection` @ `1c6a00d`); pi-coding-agent 1.6.0:
 `docs/virtual-models.md`; `dist/core/virtual-models.js` L29–42
 (`getBranchSelection`), L65–85 (`createVirtualModel`); `dist/core/model-runtime.js`
 L504–523 (`direct` routing of `streamSimple`), L743–766 (`resolveModel`:

@@ -66,7 +66,9 @@ export function decideFreshStart(i: FreshSessionInputs): FreshSessionDecision {
  * status never pretends to know whether it would fire right now (PR #193
  * review P2). */
 export function freshStatusLine(d: FreshSessionDecision): string {
-  return d.suggest ? `fresh session suggested — ${d.reason} — /router fresh` : '';
+  return d.suggest
+    ? `fresh session suggested — ${d.reason} — /router fresh (runs after the current turn)`
+    : '';
 }
 
 /** Ask-for-summary instructions handed to Pi's compaction for the handoff doc. */

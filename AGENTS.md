@@ -115,7 +115,9 @@
   copy removed) incl. its review round (decision-log prevTurn, /router current
   mark; 3731 passing / 3 skipped) + the per-request, per-session state-write
   batch with its stream-open commit and the footer's routed group after a
-  restart (3744 passing / 3 skipped); do not lower the bar to a count).
+  restart (3744 passing / 3 skipped) + the busy-session `/router fresh` and
+  long-turn `worker_step` plans (3757 passing / 3 skipped); do not lower the
+  bar to a count).
   Don't lower the `coverage.thresholds` in `vitest.config.ts` to unblock a
   red run — fix the actual regression.
 - New features/fixes get a regression test that actually exercises the fix
@@ -326,3 +328,16 @@
   proposed "historical ADRs get a pointer" in its docs sweep. That step was
   dropped, and the rule written down so the next plan does not propose it
   again.
+
+## 13. Model use: the expensive model plans, cheap workers do mechanical steps
+
+- **Owner rule 2026-11-21:** the expensive model plans, decides and judges
+  (design, review, the final verification). Mechanical steps go to a cheaper
+  worker: gate runs, log scans, searches, bulk reads, and applying an edit that
+  is already fully specified. A worker step that costs the expensive model its
+  full context is a waste of tokens.
+- This rule is the standing authorisation for the subagent delegation the
+  subagent guidance requires. Delegate only the mechanical part, and keep one
+  writer per worktree.
+- The plan that measures this and decides how far delegation goes is
+  `docs/plans/2026-11-21-long-turn-model-use.md`.
