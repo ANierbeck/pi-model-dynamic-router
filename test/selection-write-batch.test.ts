@@ -160,3 +160,65 @@ describe("a failing flush (the batch end runs in the stream path's finally)", ()
     }
   });
 });
+
+// One selection-state source serves every session of the process (index.ts:
+// the session comes from the ambient context per call). A main session and
+// an in-process subagent session stream concurrently, so their batches must
+// not share one pending buffer.
+describe('concurrent sessions batch separately', () => {
+  it('each session flushes its own folded state into its own branch', () => {
+    const mgrs = { A: fakeManager(), B: fakeManager() };
+    let current: 'A' | 'B' = 'A';
+    const src = createSelectionStateSource({
+      session: () => current,
+      branch: () => mgrs[current].getBranch(),
+      leafId: () => mgrs[current].getLeafId(),
+      appendState: (state) => {
+        mgrs[current].appendCustomEntry(STATE_ENTRY, {
+          provider: 'router',
+          modelId: 'dynamic',
+          state,
+        });
+      },
+    });
+    current = 'A';
+    src.beginBatch();
+    src.write({ group: 'planning' });
+    current = 'B';
+    src.beginBatch();
+    expect(src.read()?.group, "B does not read A's pending state").toBeUndefined();
+    src.write({ lastCategory: 'simple' });
+    src.endBatch();
+    current = 'A';
+    expect(src.read()?.group).toBe('planning');
+    src.endBatch();
+    expect(mgrs.A.stateEntries()).toHaveLength(1);
+    expect(mgrs.A.stateEntries()[0].data.state.group).toBe('planning');
+    expect(mgrs.A.stateEntries()[0].data.state.lastCategory).toBeUndefined();
+    expect(mgrs.B.stateEntries()).toHaveLength(1);
+    expect(mgrs.B.stateEntries()[0].data.state.lastCategory).toBe('simple');
+    expect(mgrs.B.stateEntries()[0].data.state.group).toBeUndefined();
+  });
+});
+
+describe('commit: the stream-open checkpoint', () => {
+  it('appends the folded state at once and keeps the batch open for later changes', () => {
+    const mgr = fakeManager();
+    const src = makeSource(mgr);
+    src.beginBatch();
+    src.write({ runGroup: 'standard' });
+    src.write({ group: 'standard' });
+    src.commit();
+    expect(mgr.appendCustomEntry, 'the served state is on the branch now').toHaveBeenCalledTimes(1);
+    src.write({ group: 'standard' });
+    src.endBatch();
+    expect(mgr.appendCustomEntry, 'nothing changed after the commit').toHaveBeenCalledTimes(1);
+  });
+
+  it('outside a batch it is a no-op', () => {
+    const mgr = fakeManager();
+    const src = makeSource(mgr);
+    src.commit();
+    expect(mgr.appendCustomEntry).not.toHaveBeenCalled();
+  });
+});

@@ -137,65 +137,85 @@ export function createSelectionStateSource(io: {
   branch(): readonly unknown[];
   leafId(): string | undefined;
   appendState(state: SelectionState): void;
+  /**
+   * The ambient session's id: batches are kept per session, because one
+   * source serves every session of the process (index.ts) and a main session
+   * and an in-process subagent session stream concurrently. Absent (unit
+   * tests with one branch): one shared key.
+   */
+  session?(): string | undefined;
 }): {
   read(): SelectionState | undefined;
   write(partial: Partial<Omit<SelectionState, 'pin'>>): void;
   beginBatch(): void;
   endBatch(): void;
+  commit(): void;
 } {
   let memoLeaf: string | undefined;
   let memoHasRead = false;
   let memoState: SelectionState | undefined;
-  // Write batching (step 5, live-phase follow-up 2026-11-21): the writes of
-  // one stream (run group at open, category after classification, group at
-  // serve) fold into ONE branch entry at the outermost end. One source serves
-  // one session, so one pending buffer is enough. The ends are unconditional
-  // (driveStream's finally), so a batch cannot stay open.
-  let batchDepth = 0;
-  // Set by write() inside an open batch: the folded state not yet appended.
-  let pending: SelectionState | undefined;
+  // Write batching (live-phase follow-up of step 5, 2026-11-22): the writes of
+  // one request (run cleared at turn start, category after classification,
+  // run group, served group) fold into ONE branch entry. The entry is
+  // appended when a stream opens (commit, at the served-ref record) — the
+  // state is on the branch while the model answers, so a process that dies
+  // mid-answer keeps it — and changes after that (a cascade into a fallback
+  // group) land at the next commit or the outermost end. Only a request
+  // that dies before any stream opened loses its writes: nothing served.
+  // Per session: depth and the folded state not yet appended.
+  const batches = new Map<string, { depth: number; pending?: SelectionState | undefined }>();
+  const keyOf = (): string => io.session?.() ?? '';
   const persist = (state: SelectionState): void => {
     try {
       io.appendState(state);
     } catch (err) {
       // Same contract as write(): a throw is a real persistence failure, and
-      // it is logged. It must not escape here: flush runs in the stream path's
-      // finally (driveStream), where an exception would break the stream.
+      // it is logged. It must not escape here: the flush runs in the stream
+      // path's finally and at the served-ref record, where an exception would
+      // break the stream.
       debugLog(`[selection] branch state not persisted: ${textOf(err)}`);
     }
   };
-  const flush = (): void => {
-    if (!pending) return;
-    const state = pending;
-    pending = undefined;
+  const flush = (batch: { pending?: SelectionState | undefined }): void => {
+    const state = batch.pending;
+    if (!state) return;
+    batch.pending = undefined;
     // The append moves the leaf: the memo must re-read, not serve the value
-    // it buffered (the pre-append branch read is outdated).
+    // read before the append.
     memoHasRead = false;
     persist(state);
   };
   return {
     /**
-     * Batch the writes of one walk into a single branch entry: the walk's
-     * writes (run group at open, category after classification, group at
-     * serve) each change the state, and appending one entry per write would
-     * add a branch entry per tool step. Writes inside an open batch fold
-     * into the in-memory state (reads see the folded value immediately) and
-     * land as ONE entry at the outermost end. begin/end nest: a fallback or
-     * retry walk started inside the outer walk joins its batch, it does not
-     * split it.
+     * Batch the writes of one request into a single branch entry (see
+     * above). begin/end nest: a walk started inside the request (a fallback
+     * or retry walk) joins its batch, it does not split it.
      */
     beginBatch(): void {
-      batchDepth += 1;
+      const key = keyOf();
+      const batch = batches.get(key);
+      if (batch) batch.depth += 1;
+      else batches.set(key, { depth: 1 });
     },
     endBatch(): void {
-      if (batchDepth === 0) return;
-      batchDepth -= 1;
-      if (batchDepth === 0) flush();
+      const key = keyOf();
+      const batch = batches.get(key);
+      if (!batch) return;
+      batch.depth -= 1;
+      if (batch.depth > 0) return;
+      batches.delete(key);
+      flush(batch);
+    },
+    /** Append the open batch's folded state now; the batch stays open. */
+    commit(): void {
+      const batch = batches.get(keyOf());
+      if (batch) flush(batch);
     },
     read(): SelectionState | undefined {
       // The open batch's folded state is the truth until its flush. Checked
       // first: an empty branch has no leaf id to key the memo by, and the
       // folded writes would otherwise be lost to a re-read of the branch.
+      const pending = batches.get(keyOf())?.pending;
       if (pending !== undefined) return pending;
       const leaf = io.leafId();
       // An unknown leaf (empty branch, or a manager without getLeafId) is no
@@ -216,9 +236,10 @@ export function createSelectionStateSource(io: {
         // run group / category: an unchanged state appends nothing, or each
         // tool step and failover hop would grow the session file.
         if (current !== undefined && sameSelectionState(current, next)) return;
-        if (batchDepth > 0) {
-          // Buffered for the batch flush; read() sees it until then.
-          pending = next;
+        const batch = batches.get(keyOf());
+        if (batch) {
+          // Buffered for the next commit or the batch end; read() sees it.
+          batch.pending = next;
           return;
         }
         persist(next);

@@ -61,7 +61,11 @@ export function walkStubWorld(config: WalkStubConfig = {}): WalkWorld {
     cfg: { model_groups: { standard: { method: 'best' } }, model_metrics: {}, providers: {} },
     cache: {},
     router: { setCurModel: vi.fn() },
-    selectionBatch: { begin: selection.beginBatch, end: selection.endBatch },
+    selectionBatch: {
+      begin: () => selection.beginBatch(),
+      end: () => selection.endBatch(),
+      commit: () => selection.commit(),
+    },
     escalation: { level: 'standard' },
     resolve: () => null,
     estimateContextTokens: () => 100,

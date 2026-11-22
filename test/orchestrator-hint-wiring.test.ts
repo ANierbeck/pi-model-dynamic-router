@@ -92,6 +92,8 @@ function world(o: Opts) {
   const classifyPrompt = vi.fn(async () => o.classification);
   const uiNotify = vi.fn();
   const ctx: any = {
+    // The request batch of the selection state (unused by these tests).
+    selectionBatch: { begin: () => {}, end: () => {}, commit: () => {} },
     cfg: { model_groups: groups, model_metrics: {}, providers: {}, ...(o.cfgExtra ?? {}) },
     cache: o.cache ?? {},
     cacheManager: { saveCache: vi.fn() },

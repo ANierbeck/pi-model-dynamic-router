@@ -259,6 +259,8 @@ const defaultExport = function (pi: ExtensionAPI): void {
     return sid ? liveSessions.get(sid) : sessionCtx;
   };
   const selectionState = createSelectionStateSource({
+    // Batches are per session (one source serves every session).
+    session: () => currentSessionId(),
     branch: () => ambientCtx()?.sessionManager?.getBranch?.() ?? [],
     leafId: () => ambientCtx()?.sessionManager?.getLeafId?.() ?? undefined,
     appendState: (state) => {
@@ -1122,13 +1124,14 @@ const defaultExport = function (pi: ExtensionAPI): void {
       selectionState.write({ group: v });
     },
     /**
-     * Batches the walk's selection-state writes into one branch entry per
-     * stream (step 5); begin/end nest (a walk inside a walk joins the batch).
+     * Batches a request's selection-state writes into one branch entry,
+     * committed when a stream opens (StreamOrchestratorContext.selectionBatch).
      */
-    get selectionBatch(): { begin: () => void; end: () => void } {
+    get selectionBatch(): { begin: () => void; end: () => void; commit: () => void } {
       return {
         begin: () => selectionState.beginBatch(),
         end: () => selectionState.endBatch(),
+        commit: () => selectionState.commit(),
       };
     },
     get lastDynamicModel(): string {

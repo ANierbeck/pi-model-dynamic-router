@@ -54,6 +54,8 @@ function followUpWorld(opts: { limited?: string[]; free?: string[]; pools?: type
   const breakerOpen = new Set<string>();
   let classification: any = { category: 'planning' };
   const ctx: any = {
+    // The request batch of the selection state (unused by these tests).
+    selectionBatch: { begin: () => {}, end: () => {}, commit: () => {} },
     cfg: {
       model_groups: GROUPS,
       model_metrics: {},

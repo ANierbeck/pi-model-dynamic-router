@@ -67,9 +67,13 @@ describe('a served request persists the served group (step 5)', () => {
     );
   }, 30_000);
 
-  // Live-phase follow-up: the walk's writes (run group, category, served
-  // group) fold into one entry per stream, however many candidates failed.
-  it('one stream — a cascade included — appends exactly one state entry', async () => {
+  // Live-phase follow-up: a request's writes fold into one entry, committed
+  // when a stream opens (crash safety: the state is on the branch while the
+  // model answers). A cascade opens a stream per walk group, so it commits
+  // once per group that opened one: the primary when hi-1 opened (its
+  // answer then came back empty), the fallback when lo-1 opened. Failed
+  // candidates of the same group add nothing.
+  it('a cascade commits once per walk group that opened a stream', async () => {
     await withIsolatedRouter(
       {
         ...BASE_CONFIG,
@@ -94,7 +98,7 @@ describe('a served request persists the served group (step 5)', () => {
         const stateEntries = sessionManager
           .getBranch()
           .filter((e: any) => e.type === 'custom' && e.customType === STATE_ENTRY);
-        expect(stateEntries).toHaveLength(1);
+        expect(stateEntries.map((e: any) => e.data.state.group)).toEqual(['standard', 'simple']);
         expect(branchState(sessionManager.getBranch() as any)?.group).toBe('simple');
       }
     );

@@ -74,11 +74,18 @@ without the owner's explicit release approval).
     routed to (after a failed walk, the `fallback_groups` entry that took
     over) applies
     from the first turn. A write that changes nothing appends no entry, and
-    the writes of one stream (run group, category, served group, a fallback
-    cascade included) land as ONE `pi.virtual-model-state` entry. Trade-off:
-    the entry is written when the stream ends, so a process that dies
-    mid-stream loses that one stream's state writes (the previous stream's
-    values stay).
+    the writes of one request (run group, category, served group) land as
+    ONE `pi.virtual-model-state` entry, appended when the model's stream
+    opens — the state is on the branch while the model answers, so a process
+    that dies mid-answer keeps it. A cascade into a fallback group adds one
+    entry per group that opened a stream. Batches are kept per session, so a
+    subagent session streaming in the same process never mixes its state
+    into the main session's branch.
+  - Before the first request after a restart, the footer and the `/router`
+    overview name the routed group (the classifying group, or the pin) as
+    they do afterwards — no longer the group that served last (that one is
+    the budget anchor, not a display value; a `--continue` showed e.g.
+    `code_complex/router/dynamic` until the first prompt).
   - The Router's own copy of the session group is gone: a switch to a
     concrete model no longer leaves the footer naming the group that served
     before the switch. Red-first: `test/serve-persists-group.test.ts` (the
@@ -86,7 +93,12 @@ without the owner's explicit release approval).
     (the footer named `standard` for a `planning`-tier model),
     `test/selection-branch-store.test.ts` (unchanged writes appended
     entries), `test/virtual-model.test.ts` (the pin release on
-    `route()`'s fallback dropped the stored run group and category).
+    `route()`'s fallback dropped the stored run group and category),
+    `test/selection-write-batch.test.ts` and
+    `test/selection-write-batch-turn.test.ts` (a dynamic turn wrote 3–4
+    entries, none of them while the model answered; a second session read
+    the first one's pending state), `test/virtual-selection.test.ts` (the
+    footer named the stored served group after a restart).
 - **The `<group>:use-static` variant and the keyword static classifier are
   gone** (ADR 0037). When every classifier hop fails, the answer is the
   `continue` category (`no classifier answered`), which is what a plain group

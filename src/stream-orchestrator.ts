@@ -232,11 +232,12 @@ export interface StreamOrchestratorContext {
   // Mutable session state
   activeGroup: string | null;
   /**
-   * Batches the walk's selection-state writes into one branch entry per
-   * stream (step 5); begin/end nest (a walk inside a walk joins the batch),
-   * and the outermost end flushes.
+   * Batches a request's selection-state writes into one branch entry:
+   * begin/end nest (a walk inside a walk joins the batch), commit appends
+   * the folded state when a stream opens (recordServedRef), the outermost
+   * end appends what changed after that.
    */
-  selectionBatch: { begin(): void; end(): void };
+  selectionBatch: { begin(): void; end(): void; commit(): void };
   lastDynamicModel: string;
   /**
    * The agent run's group and the model the run was meant to be driven by, set
@@ -377,6 +378,9 @@ function recordServedRef(ctx: StreamOrchestratorContext, ref: string, groupName?
   // previous-turn group read it, so both survive a restart. An unchanged
   // group appends nothing (createSelectionStateSource).
   if (groupName) ctx.activeGroup = groupName;
+  // A stream opened: the request's state goes on the branch now, not when
+  // the answer ends — a process that dies mid-answer keeps it.
+  ctx.selectionBatch.commit();
 }
 
 export class StreamOrchestrator {
@@ -582,6 +586,11 @@ export class StreamOrchestrator {
 
     // Dynamic group
     const proxy = createAssistantMessageEventStream();
+    // One selection-state entry per request: the writes before the walk
+    // (run cleared, category, run group) join the walk's batch, and the
+    // served-ref record commits it when a stream opens. Begun here, inside
+    // the session scope, and ended in the chain's finally (same scope).
+    this.ctx.selectionBatch.begin();
     void (async (): Promise<void> => {
       let candidates: string[];
       let dynamicLabel: string | undefined;
@@ -1033,11 +1042,13 @@ export class StreamOrchestrator {
         undefined,
         sourceModel
       );
-    })().catch((err: unknown) => {
-      // The try/catch above covers classification, but its own catch branch
-      // resolves the fallback group; a throw there must still end the stream.
-      this.failStream(proxy, err, 'in dynamic routing', sourceModel);
-    });
+    })()
+      .catch((err: unknown) => {
+        // The try/catch above covers classification, but its own catch branch
+        // resolves the fallback group; a throw there must still end the stream.
+        this.failStream(proxy, err, 'in dynamic routing', sourceModel);
+      })
+      .finally(() => this.ctx.selectionBatch.end());
     return proxy;
   }
 
@@ -1064,9 +1075,9 @@ export class StreamOrchestrator {
     visitedGroups?: Set<string>,
     sourceModel?: SourceModelInfo
   ): Promise<void> {
-    // One batched state write per walk (step 5): the walk's writes (run group
-    // at open, category after classification, group at serve) fold into one
-    // branch entry, flushed here. A sub-call's walk writes nothing anyway.
+    // The walk joins the request's batch (openGroupStream) or, on the static
+    // and the tool follow-up path, opens it; recordServedRef commits it when
+    // a stream opens. A sub-call's walk writes nothing anyway.
     this.ctx.selectionBatch.begin();
     try {
       await this.walkCandidates(
