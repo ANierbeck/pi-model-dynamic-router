@@ -1121,6 +1121,16 @@ const defaultExport = function (pi: ExtensionAPI): void {
     set activeGroup(v) {
       selectionState.write({ group: v });
     },
+    /**
+     * Batches the walk's selection-state writes into one branch entry per
+     * stream (step 5); begin/end nest (a walk inside a walk joins the batch).
+     */
+    get selectionBatch(): { begin: () => void; end: () => void } {
+      return {
+        begin: () => selectionState.beginBatch(),
+        end: () => selectionState.endBatch(),
+      };
+    },
     get lastDynamicModel(): string {
       return turn().lastDynamicModel;
     },

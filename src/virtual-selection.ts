@@ -140,12 +140,63 @@ export function createSelectionStateSource(io: {
 }): {
   read(): SelectionState | undefined;
   write(partial: Partial<Omit<SelectionState, 'pin'>>): void;
+  beginBatch(): void;
+  endBatch(): void;
 } {
   let memoLeaf: string | undefined;
   let memoHasRead = false;
   let memoState: SelectionState | undefined;
+  // Write batching (step 5, live-phase follow-up 2026-11-21): the writes of
+  // one stream (run group at open, category after classification, group at
+  // serve) fold into ONE branch entry at the outermost end. One source serves
+  // one session, so one pending buffer is enough. The ends are unconditional
+  // (driveStream's finally), so a batch cannot stay open.
+  let batchDepth = 0;
+  // Set by write() inside an open batch: the folded state not yet appended.
+  let pending: SelectionState | undefined;
+  const persist = (state: SelectionState): void => {
+    try {
+      io.appendState(state);
+    } catch (err) {
+      // Same contract as write(): a throw is a real persistence failure, and
+      // it is logged. It must not escape here: flush runs in the stream path's
+      // finally (driveStream), where an exception would break the stream.
+      debugLog(`[selection] branch state not persisted: ${textOf(err)}`);
+    }
+  };
+  const flush = (): void => {
+    if (!pending) return;
+    const state = pending;
+    pending = undefined;
+    // The append moves the leaf: the memo must re-read, not serve the value
+    // it buffered (the pre-append branch read is outdated).
+    memoHasRead = false;
+    persist(state);
+  };
   return {
+    /**
+     * Batch the writes of one walk into a single branch entry: the walk's
+     * writes (run group at open, category after classification, group at
+     * serve) each change the state, and appending one entry per write would
+     * add a branch entry per tool step. Writes inside an open batch fold
+     * into the in-memory state (reads see the folded value immediately) and
+     * land as ONE entry at the outermost end. begin/end nest: a fallback or
+     * retry walk started inside the outer walk joins its batch, it does not
+     * split it.
+     */
+    beginBatch(): void {
+      batchDepth += 1;
+    },
+    endBatch(): void {
+      if (batchDepth === 0) return;
+      batchDepth -= 1;
+      if (batchDepth === 0) flush();
+    },
     read(): SelectionState | undefined {
+      // The open batch's folded state is the truth until its flush. Checked
+      // first: an empty branch has no leaf id to key the memo by, and the
+      // folded writes would otherwise be lost to a re-read of the branch.
+      if (pending !== undefined) return pending;
       const leaf = io.leafId();
       // An unknown leaf (empty branch, or a manager without getLeafId) is no
       // memo key — re-read, never serve a cache entry from another branch.
@@ -165,7 +216,12 @@ export function createSelectionStateSource(io: {
         // run group / category: an unchanged state appends nothing, or each
         // tool step and failover hop would grow the session file.
         if (current !== undefined && sameSelectionState(current, next)) return;
-        io.appendState(next);
+        if (batchDepth > 0) {
+          // Buffered for the batch flush; read() sees it until then.
+          pending = next;
+          return;
+        }
+        persist(next);
       } catch (err) {
         // The io seam no-ops quietly itself when no manager is in scope
         // (plain process code); a THROW is a real persistence failure —

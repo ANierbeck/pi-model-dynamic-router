@@ -12,7 +12,7 @@ import {
   successStream,
   withIsolatedRouter,
 } from './helpers/drive-stream-env.ts';
-import { branchState } from '../src/virtual-selection.ts';
+import { branchState, STATE_ENTRY } from '../src/virtual-selection.ts';
 
 describe('a served request persists the served group (step 5)', () => {
   it('the branch state records the group that served', async () => {
@@ -62,6 +62,39 @@ describe('a served request persists the served group (step 5)', () => {
           )
         );
         expect(streamText(events as any)).toContain('fallback served');
+        expect(branchState(sessionManager.getBranch() as any)?.group).toBe('simple');
+      }
+    );
+  }, 30_000);
+
+  // Live-phase follow-up: the walk's writes (run group, category, served
+  // group) fold into one entry per stream, however many candidates failed.
+  it('one stream — a cascade included — appends exactly one state entry', async () => {
+    await withIsolatedRouter(
+      {
+        ...BASE_CONFIG,
+        model_groups: {
+          standard: { fallback_groups: ['simple'], min_gdpval: 900, max_cost: 1000 },
+          simple: { fallback_groups: [], min_gdpval: 0, max_gdpval: 899, max_cost: 1000 },
+        },
+        gdpval_builtin: { 'hi-1': 1000, 'lo-1': 800 },
+      },
+      [cloudModel('hi-provider', 'hi-1'), cloudModel('lo-provider', 'lo-1')],
+      async ({ groupStream, streamSimple, sessionManager }) => {
+        streamSimple.mockImplementation((model: any) =>
+          model.id === 'lo-1' ? successStream('fallback served') : emptyStream()
+        );
+        await drainStream(
+          await groupStream(
+            { provider: 'standard', id: 'standard' } as any,
+            { messages: [{ role: 'user', content: 'do the thing', timestamp: 1 }] } as any,
+            {}
+          )
+        );
+        const stateEntries = sessionManager
+          .getBranch()
+          .filter((e: any) => e.type === 'custom' && e.customType === STATE_ENTRY);
+        expect(stateEntries).toHaveLength(1);
         expect(branchState(sessionManager.getBranch() as any)?.group).toBe('simple');
       }
     );

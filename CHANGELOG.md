@@ -73,7 +73,12 @@ without the owner's explicit release approval).
     and the per-group `context_budget` of the group the last request was
     routed to (after a failed walk, the `fallback_groups` entry that took
     over) applies
-    from the first turn. A write that changes nothing appends no entry.
+    from the first turn. A write that changes nothing appends no entry, and
+    the writes of one stream (run group, category, served group, a fallback
+    cascade included) land as ONE `pi.virtual-model-state` entry. Trade-off:
+    the entry is written when the stream ends, so a process that dies
+    mid-stream loses that one stream's state writes (the previous stream's
+    values stay).
   - The Router's own copy of the session group is gone: a switch to a
     concrete model no longer leaves the footer naming the group that served
     before the switch. Red-first: `test/serve-persists-group.test.ts` (the

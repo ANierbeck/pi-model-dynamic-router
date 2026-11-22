@@ -231,6 +231,12 @@ function narrateBreakerOpen(
 export interface StreamOrchestratorContext {
   // Mutable session state
   activeGroup: string | null;
+  /**
+   * Batches the walk's selection-state writes into one branch entry per
+   * stream (step 5); begin/end nest (a walk inside a walk joins the batch),
+   * and the outermost end flushes.
+   */
+  selectionBatch: { begin(): void; end(): void };
   lastDynamicModel: string;
   /**
    * The agent run's group and the model the run was meant to be driven by, set
@@ -1058,6 +1064,10 @@ export class StreamOrchestrator {
     visitedGroups?: Set<string>,
     sourceModel?: SourceModelInfo
   ): Promise<void> {
+    // One batched state write per walk (step 5): the walk's writes (run group
+    // at open, category after classification, group at serve) fold into one
+    // branch entry, flushed here. A sub-call's walk writes nothing anyway.
+    this.ctx.selectionBatch.begin();
     try {
       await this.walkCandidates(
         proxy,
@@ -1076,6 +1086,8 @@ export class StreamOrchestrator {
         `outside the candidate loop for group ${groupName ?? label ?? '?'}`,
         sourceModel
       );
+    } finally {
+      this.ctx.selectionBatch.end();
     }
   }
 
