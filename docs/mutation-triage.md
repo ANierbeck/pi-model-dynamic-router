@@ -1862,3 +1862,31 @@ Corrections to the working notes of this round: the L1107 OR-operand mutant `fal
 Gates on the result: `tsc` exit 0, lint gate 0 findings, prettier clean, `npx vitest run` 3774 passed / 3 skipped (300 files), AGENTS §4 count updated.
 
 Next nightly: the carry-over gives 35 rows `recheck` (the existing suite kills them, so a re-appearance means perTest attribution again) and 3 rows `ledgered`.
+
+---
+
+## Nightly N12 (2026-11-22) — routing.ts remainders
+
+Report: fresh Stryker run on main @ `7ce2502` (all of `src/routing.ts`: 1125 mutants, 1067 killed, 53 survived, 5 timeouts, score 95.29 %). Carry-over against r1/r2/r4/n11/n12: 39 `ledgered`, 14 `recheck`, 0 `triage` after this round. Dataset: `docs/mutation-data/nightly-routing-n12.json` (20 rows, the rows the earlier ledgers did not cover).
+
+| Step | Result |
+|---|---|
+| Full-suite recheck (`scripts/mutation-recheck.ts`) | 12 killed by the existing suite (SUITE-KILLED); 8 survive |
+| New pins: `test/routing-n12-pins.test.ts` (4 tests) | 2 of the 8 killed (REAL-KILLED: 388, 1123); 6 remain |
+| Equivalent | 6 (EQUIVALENT, reasons in the dataset) |
+
+The 14 `recheck` rows of the carry-over are the already-killed mutants (12 suite kills, 2 pin kills). A re-appearance in a nightly means perTest attribution is false again, not an open survivor. Each kill was confirmed with `--tests test/routing-n12-pins.test.ts`: red on the mutant, green on the clean source.
+
+What the pins pin:
+- **388** `noteTurnStart`: a non-number turn start is ignored (the `typeof` guard). Without the guard, `'9000' > 5000` writes a string into the boundary.
+- **1123** `explainBestRanking` via `getTopModels`: a candidate without a capability profile in a `score_by` group reads `no profile, by GDPval`.
+- **482** (equivalent, see below) is still covered by a fail-open test for `allDiscoveredRefs` with a registry lacking `runtime`. It documents the contract; no mutant of the list is killed by it.
+
+Equivalent mutants:
+- **392** `noteTurnStart` `>` → `>=`: an equal start writes the same number again.
+- **414, 415** `getTurnDriverRef` / **431, 432** `getCurModel`: the clause `turnStartMs > 0` decides only for start values ≤ 0. There the mutant would also need `turnDriverAt < turnStartMs` (resp. `curModelAt < turnStartMs`), which requires a negative timestamp. Those are 0 or `Date.now()`, so the condition is never true. This relies on the invariant that turn timestamps are non-negative.
+- **482** `runtime?.hasConfiguredAuth` → `runtime.hasConfiguredAuth` in the provider loop: the loop runs only when `canAnswerAuth` is true, and that implies `runtime` is defined.
+
+Gates on the result: `vitest` 3778 passed / 3 skipped (301 files), AGENTS §4 count updated to 3778. tsc, lint and prettier are run in the next step.
+
+Open: `scripts/mutation-carryover.ts` still crashes on non-ledger input (`slice2-driveStream.json` is a raw array). That is the orchestrator ledger conversion, not part of this round.
