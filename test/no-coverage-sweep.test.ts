@@ -47,6 +47,14 @@ describe('isVirtualGroupRef — full truth table', () => {
     expect(isVirtualGroupRef('trivial/trivial:use-other', groups)).toBe(false);
     expect(isVirtualGroupRef('trivial/simple:use-static', groups)).toBe(false);
   });
+
+  it('a real model whose id is "dynamic" is not the router/dynamic selection model', () => {
+    // Only the router's own provider owns the `dynamic` id. Nightly N12
+    // (2026-11-24, mutant `provider === VIRTUAL_PROVIDER` -> true) showed
+    // nothing pinned the provider half: every `<provider>/dynamic` would be
+    // dropped from the candidate pool as a routing artefact.
+    expect(isVirtualGroupRef('openai/dynamic', groups)).toBe(false);
+  });
 });
 
 // ── Shared fixtures for the routing-path clusters ──────────────────────────

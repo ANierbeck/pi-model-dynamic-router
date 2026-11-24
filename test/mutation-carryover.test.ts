@@ -118,6 +118,11 @@ describe('backfillLedger', () => {
     };
     expect(() => backfillLedger(rep, bad)).toThrow(/src\/f\.ts#99/);
   });
+
+  it('refuses a recheck result array instead of crashing on it', () => {
+    const rep = report(SOURCE, [{ ...ARR, status: 'Survived' }]);
+    expect(() => backfillLedger(rep, [] as unknown as Ledger)).toThrow(/is not a ledger/);
+  });
 });
 
 describe('carryOver', () => {
@@ -221,6 +226,30 @@ describe('carryOver', () => {
     const next = report(SOURCE, [{ ...ARR, status: 'Survived' }]);
     expect(() => carryOver(next, [{ name: 'legacy', ledger: legacy }])).toThrow(
       /legacy.*--backfill/
+    );
+  });
+
+  it('a recheck result array passed as a ledger is refused by name, not a TypeError', () => {
+    // docs/mutation-data/slice2-driveStream.json is a mutation-recheck.ts
+    // result array, not a ledger. Passing it via --ledger crashed with
+    // "Cannot read properties of undefined (reading 'indexOf')" (N12, 2026-11-22).
+    const recheckResult = [
+      { file: 'src/f.ts', line: 2, id: '1', mutatorName: 'ArrayDeclaration', result: 'killed' },
+    ];
+    const next = report(SOURCE, [{ ...ARR, status: 'Survived' }]);
+    expect(() =>
+      carryOver(next, [{ name: 'slice2.json', ledger: recheckResult as unknown as Ledger }])
+    ).toThrow(/slice2\.json is not a ledger/);
+  });
+
+  it('a ledger with a non-array row is refused by name, not a TypeError', () => {
+    // Sourcery PR #210: columns and rows were checked, the rows themselves
+    // were not, so a stray object row crashed inside indexLedger.
+    const next = report(SOURCE, [{ ...ARR, status: 'Survived' }]);
+    const bad = ledgerFrom(next, { [ARR.id]: 'EQUIVALENT' });
+    bad.rows.push({ id: '9' } as unknown as string[]);
+    expect(() => carryOver(next, [{ name: 'bad.json', ledger: bad }])).toThrow(
+      /bad\.json is not a ledger.*row 1/
     );
   });
 });
