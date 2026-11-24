@@ -1,10 +1,12 @@
-// N12 survivor round for src/metrics.ts. Pins the 21 mutants the nightly
-// (run 45041910456, perTest attribution gap) left undetected in the
-// free/placeholder decision:
+// N12 survivor round for src/metrics.ts. Nightly run 45017121699 left 21
+// mutants undetected after the full-suite recheck; the pins below kill 18
+// of them, the other 3 are ledgered EQUIVALENT (docs/mutation-triage.md,
+// "Nightly N12"). The free/placeholder decision they cover:
 //   L878 — :free terminal tag (Sourcery PR #74 — includes must NOT match)
 //   L880-886 — free_models config match: full ref AND bare id slice
 //   L901 — placeholder gate: discovered cost 0 without registry = free
 //   L1107-1113 — OR-fallback short-circuit + discovery gate
+//   L1117-1122 — isFreeByDefinition: :free tag, local provider, free_models
 //   L1218 — registryFailed init: registry answers a price → NOT free
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import * as m from '../src/metrics.ts';
@@ -38,6 +40,17 @@ describe('N12 mutation pins — isFreeModelRef gates', () => {
     expect(
       m.isFreeModelRef('prov/m' as any, {}, [{ provider: 'prov', id: 'm', cost_per_m: 0 }] as any)
     ).toBe(false);
+  });
+  it('contrast: the same lookup with a registry {0,0} keeps the placeholder free', () => {
+    // Same fixture, only the registry price differs. A false above could also
+    // come from the catch of a throwing registry; this true can only come from
+    // a registry that answered, so the pair pins that the price itself decides
+    // (Sourcery, PR #209).
+    m.setCache({ available_models: [{ provider: 'prov', id: 'm', cost_per_m: 0 }] } as any);
+    m.setModelRegistry({ find: () => ({ cost: { input: 0, output: 0 } }) });
+    expect(
+      m.isFreeModelRef('prov/m' as any, {}, [{ provider: 'prov', id: 'm', cost_per_m: 0 }] as any)
+    ).toBe(true);
   });
 });
 

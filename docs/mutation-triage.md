@@ -1849,7 +1849,7 @@ Report: scheduled run 45017121699 (main @ 03274c1). `src/metrics.ts` is unchange
 | Step | Result |
 |---|---|
 | Full-suite recheck (`scripts/mutation-recheck.ts`) | 17 killed by the existing suite (perTest false survivors, SUITE-KILLED); 21 survive |
-| New pins: `test/metrics-lookup-fallback.test.ts` (17 tests) | 18 of the 21 killed (REAL-KILLED) |
+| New pins: `test/metrics-lookup-fallback.test.ts` (18 tests: 17 pins + 1 contrast case added after the PR #209 review) | 18 of the 21 killed (REAL-KILLED) |
 | Equivalent | 3 (EQUIVALENT, reasons in the dataset) |
 
 Equivalent mutants:
@@ -1887,6 +1887,6 @@ Equivalent mutants:
 - **414, 415** `getTurnDriverRef` / **431, 432** `getCurModel`: the clause `turnStartMs > 0` decides only for start values ≤ 0. There the mutant would also need `turnDriverAt < turnStartMs` (resp. `curModelAt < turnStartMs`), which requires a negative timestamp. Those are 0 or `Date.now()`, so the condition is never true. This relies on the invariant that turn timestamps are non-negative.
 - **482** `runtime?.hasConfiguredAuth` → `runtime.hasConfiguredAuth` in the provider loop: the loop runs only when `canAnswerAuth` is true, and that implies `runtime` is defined.
 
-Gates on the result: `vitest` 3778 passed / 3 skipped (301 files), AGENTS §4 count updated to 3778. tsc, lint and prettier are run in the next step.
+Gates on the result: `vitest` 3779 passed / 3 skipped (301 files, incl. the PR #209 contrast case), AGENTS §4 count updated to 3779; tsc exit 0, lint gate 0 findings, prettier clean.
 
 Open: `scripts/mutation-carryover.ts` still crashes on non-ledger input (`slice2-driveStream.json` is a raw array). That is the orchestrator ledger conversion, not part of this round.
