@@ -285,11 +285,13 @@
   2026-11-24, open decision 5 of
   `docs/plans/2026-11-21-virtual-models-migration.md`). Since 2.0 the
   router's only selectable model is a Pi virtual model, so the alignment
-  round also runs `node spikes/virtual-models/router-shape-run.ts` (the
-  two-layer checks) and `spikes/virtual-models/run-retry-matrix.sh` (the
-  retry matrix, skipped in the 1.6.0 round) against the new host. A failed
-  check blocks the upgrade until it is understood; the result goes to
-  `docs/research/`.
+  round also runs `spikes/virtual-models/run-router-shape.sh` (starts the
+  fake provider itself, runs the two-layer checks) and
+  `spikes/virtual-models/run-retry-matrix.sh` (the retry matrix, skipped in
+  the 1.6.0 round) against the new host. Both exit nonzero on a failed
+  check — the matrix compares against the recorded Pi 1.6.0 baseline — and
+  that status blocks the upgrade until the deviation is understood; the
+  result goes to `docs/research/`.
 - Before a release is proposed (§1), include the current `npm audit`
   summary in the report.
 

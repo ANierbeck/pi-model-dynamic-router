@@ -30,15 +30,13 @@ Two facts, measured on the live data, break the ranking:
    from 2026-09-27, before any scraped row existed). Builtin wins in
    `setConfig`/`setCache` (`Object.assign(gdpval, cfg.gdpval_builtin)`).
 
-Net effect, visible in the router log: since 2026-11-21 `code_complex`
-(min_gdpval 1630, max_gdpval 1700) contains only `claude-opus-5-5`
-(2026-11-24: none at all after the user-layer Opus exclude, so turns fall
-through to `planning`, where Opus also leads). Token share of Opus per
-day, summed over all Pi sessions: 0–16 % before 2026-11-20, then 68 %
-(11-20), 34 % (11-21), 45 % (11-22), 51 % (11-24) — 177 M Opus tokens
-since 11-20, 89 % of them from two long sessions in this repo with
-~160–170k context per step. `continue` turns keep that group, so one Opus
-turn pins the session.
+Net effect, measured in
+`docs/research/2026-11-24-opus-surge-gdpval-variant.md`: since
+2026-11-21 `code_complex` (min_gdpval 1630, max_gdpval 1700) contains only
+`claude-opus-5-5` (2026-11-24: none at all after the user-layer Opus
+exclude, so turns fall through to `planning`, where Opus also leads), and
+Opus carries 45–68 % of daily tokens since 2026-11-20 (177 M tokens;
+`continue` turns keep the run group, so one Opus turn pins a session).
 
 ## Solution
 
@@ -51,11 +49,14 @@ turn pins the session.
      unaffected.
    - Capability profiles get the same mapping (they carry `-high`/`-xhigh`
      keys for some models; missing → bare key).
-2. **Thread the level through, do not global-state it.** `route()` already
-   receives `request.thinkingLevel` (`src/virtual-model.ts:104`). The
-   level travels with the request into the group resolution and the gates
-   (`applyGroupFilters`) as a parameter — a module-global "current level"
-   would race between a parent turn and its sub-calls. Where a lookup
+2. **Thread the level through every score use, not just the gates.**
+   `route()` already receives `request.thinkingLevel`
+   (`src/virtual-model.ts:104`). The level travels with the request into
+   group resolution, the gates (`applyGroupFilters`) **and the ranking**
+   (`getM`, `sortBy`, `sortBest`, `rankByScore`) as a parameter — with only
+   the gates level-aware, candidates that pass would still be ordered by
+   bare-slug scores. A module-global "current level" would race between a
+   parent turn and its sub-calls, so no global state. Where a lookup
    happens without a request (scan-time snapshot generation), use the bare
    slug as today.
 3. **Remove `"claude-opus-5-5": 1900` from the shipped
@@ -82,8 +83,11 @@ turn pins the session.
    at route time? (Recommendation: request field, fallback
    `pi.getThinkingLevel()`.)
 3. **User-layer overrides:** `gdpval_builtin` in `router-config.user.json`
-   keeps winning (user layer is allowed to name models) — document that
-   this is the escape hatch if a scraped variant looks wrong.
+   (user layer, allowed to name models) must win over BOTH the bare slug
+   and the variant row — precedence order: user builtin key (bare or
+   variant) → scraped variant slug → scraped bare slug. Document this as
+   the escape hatch if a scraped variant looks wrong; a bare user key
+   applies to every variant of that model.
 4. **Timing:** in 2.0.0 or after? The change alters the ranking for every
    install, so it belongs in the 2.0.0 breaking-change batch; the owner
    decides.
@@ -93,7 +97,8 @@ turn pins the session.
 - [ ] Level→suffix map + variant-first lookup in `metrics.ts`, with tests
       (red-first: bare-slug-only lookup must differ from `-high` lookup
       when both rows exist).
-- [ ] Thread `thinkingLevel` request → gates; concurrency test with
+- [ ] Thread `thinkingLevel` request → gates AND ranking lookups
+      (`getM`/`sortBy`/`sortBest`/`rankByScore`); concurrency test with
       different levels in parent and sub-call.
 - [ ] Remove the shipped builtin entry; rewrite the config pin red-first.
 - [ ] Capability-profile variant mapping + tests.
