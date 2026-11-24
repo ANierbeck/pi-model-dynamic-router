@@ -6,29 +6,17 @@ get their own plan).
 
 **Verified against:** `main` @ `98e6259`; the full-suite recheck of the
 293 unledgered `src/stream-orchestrator.ts` mutants from nightly
-45406167652 (`docs/mutation-data/nightly-orch-n12.json`). The counts below
-come from that file. I did not read every OPEN mutant against the code. The
-cluster column is mechanical, by mutator, and is not a verdict.
+45406167652 (`docs/mutation-data/nightly-orch-n12.json`). The counts come
+from that file. Not every OPEN mutant has been read against the code yet;
+the region split is mechanical, by mutator, and is not a verdict.
 
 ## Problem
 
 210 orchestrator mutants have no verdict. 206 survive the full suite, 3
 time out and 1 kill is unconfirmed. The carry-over keeps them in triage,
 so every nightly shows them again until someone rules on each one.
-By region (text = string mutants, call = removed call or block, cond =
-condition, operator or arithmetic):
-
-| region (lines on `98e6259`) | open | text | call | cond |
-|---|---|---|---|---|
-| helpers 54–217 | 5 | 4 | 0 | 1 |
-| class helpers 366–546 | 7 | 3 | 0 | 4 |
-| `openGroupStream` 555–1067 | 27 | 5 | 4 | 18 |
-| `driveStream` / `classifyBehindPin` / `failStream` 1068–1148 | 6 | 3 | 3 | 0 |
-| walk main loop 1149–1639 | 66 | 45 | 4 | 17 |
-| cascade, overflow, breaker check 1640–1699 | 9 | 1 | 0 | 8 |
-| breaker probe 1700–1799 | 42 | 10 | 10 | 22 |
-| cooldown collapse 1800–1948 | 35 | 15 | 8 | 12 |
-| final error, helpers 1949– | 13 | 3 | 1 | 9 |
+Their split by code region is in
+`docs/research/2026-11-24-orchestrator-mutation-n12.md`.
 
 Known reasons that the suite misses them (from slice 2, still valid):
 user-visible narration that no test reads, recording-seam calls whose

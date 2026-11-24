@@ -101,6 +101,8 @@ function key(
  * Refuses anything that is not a `{ columns, rows }` ledger, e.g. a
  * mutation-recheck.ts result array such as slice2-driveStream.json, which
  * otherwise crashes later with a bare TypeError on `columns.indexOf`.
+ * Every row must be an array too: an object row would otherwise be read
+ * as all-undefined cells and silently index a garbage verdict.
  */
 function assertLedger(name: string, ledger: unknown): asserts ledger is Ledger {
   const l = ledger as Partial<Ledger> | null;
@@ -108,6 +110,8 @@ function assertLedger(name: string, ledger: unknown): asserts ledger is Ledger {
     throw new Error(
       `${name} is not a ledger (expected { columns, rows }; a mutation-recheck result array is not one)`
     );
+  const bad = l.rows.findIndex((r) => !Array.isArray(r));
+  if (bad !== -1) throw new Error(`${name} is not a ledger (row ${bad} is not an array)`);
 }
 
 /** Adds (or refreshes) the `original` + `context` columns from the report the ledger was triaged on. */

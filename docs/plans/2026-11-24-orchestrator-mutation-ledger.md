@@ -1,8 +1,8 @@
 # Orchestrator mutants without a carry-over ledger
 
 **Status:** done — 2026-11-24. The agent chose the approach under
-the owner's standing go for the mutation triage ("1, jetzt machen",
-2026-11-22). The owner can overrule it under Open decisions. The 210 mutants
+the owner's standing go for the mutation triage ("option 1, do it
+now", 2026-11-22). The owner can overrule it under Open decisions. The 210 mutants
 left OPEN continue in `2026-11-24-orchestrator-pin-round.md`.
 
 **Verified against:** `main` @ `98e6259` (`src/` unchanged since `7ce2502`);
@@ -30,15 +30,9 @@ them a verdict. Two causes, both checked on the data:
    the 49 undetected `openGroupStream` mutants still match it. The ADR 0037
    migration edited that region.
 
-Where the 293 sit (the function that encloses each mutant in the report
-source): `walkCandidates` 211, `openGroupStream` 43, helpers (lines 54–217)
-13, the rest 26, spread over 11 small methods.
-
-A probe on whether the conversion would pay off:
-`mutation-instrument-one.ts` on `c101b27` reproduces all 642 slice-2 ids
-exactly (same line, mutator and replacement). With those rows backfilled,
-**at most 118** of the 211 `walkCandidates` rows match a historical key. The
-remaining 175 of the 293 match none.
+Measurements (where the 293 sit, the conversion probe, the recheck result):
+`docs/research/2026-11-24-orchestrator-mutation-n12.md`. In short, converting
+the slice-2 verdicts would match at most 118 of the 293 rows.
 
 ## Solution — recheck first, history as a reading aid
 

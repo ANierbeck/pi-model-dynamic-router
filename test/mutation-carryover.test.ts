@@ -241,6 +241,17 @@ describe('carryOver', () => {
       carryOver(next, [{ name: 'slice2.json', ledger: recheckResult as unknown as Ledger }])
     ).toThrow(/slice2\.json is not a ledger/);
   });
+
+  it('a ledger with a non-array row is refused by name, not a TypeError', () => {
+    // Sourcery PR #210: columns and rows were checked, the rows themselves
+    // were not, so a stray object row crashed inside indexLedger.
+    const next = report(SOURCE, [{ ...ARR, status: 'Survived' }]);
+    const bad = ledgerFrom(next, { [ARR.id]: 'EQUIVALENT' });
+    bad.rows.push({ id: '9' } as unknown as string[]);
+    expect(() => carryOver(next, [{ name: 'bad.json', ledger: bad }])).toThrow(
+      /bad\.json is not a ledger.*row 1/
+    );
+  });
 });
 
 describe('formatLedger', () => {
