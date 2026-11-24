@@ -281,6 +281,15 @@
   alignment round (tsc, suite, coverage thresholds unchanged, build, and
   verify the private reach-throughs still exist). Check at the start of
   larger work rounds and before every release proposal.
+- **Every host upgrade re-runs the virtual-model spikes** (owner decision
+  2026-11-24, open decision 5 of
+  `docs/plans/2026-11-21-virtual-models-migration.md`). Since 2.0 the
+  router's only selectable model is a Pi virtual model, so the alignment
+  round also runs `node spikes/virtual-models/router-shape-run.ts` (the
+  two-layer checks) and `spikes/virtual-models/run-retry-matrix.sh` (the
+  retry matrix, skipped in the 1.6.0 round) against the new host. A failed
+  check blocks the upgrade until it is understood; the result goes to
+  `docs/research/`.
 - Before a release is proposed (§1), include the current `npm audit`
   summary in the report.
 

@@ -248,11 +248,11 @@ hides the groups from `/model` and turns `set_model_from_group` into a pin
 4. ~~The switch and its default.~~ **Decided 2026-11-21 (owner):** no switch;
    the virtual layer is the only path in 2.0.0, old sessions are migrated at
    `session_start`, the workarounds go in the same release.
-5. **Widen the re-evaluation trigger** of the 2026-11-04 plan beyond retry
+5. ~~**Widen the re-evaluation trigger** of the 2026-11-04 plan beyond retry
    behavior, and add the retry matrix to the host alignment checklist in
-   AGENTS §10 (it was skipped in the 1.6.0 round). Still open; with the
-   migration done the trigger turns into "re-run the router-shape spike on
-   every host upgrade", which is the recommendation.
+   AGENTS §10.~~ **Decided 2026-11-24 (owner):** yes, for compatibility.
+   AGENTS §10 now has every host upgrade re-run the router-shape spike and
+   the retry matrix.
 6. **The `:use-static` variants.** Decided 2026-11-21: dropped, together
    with the keyword static classifier that only they reached. No variant is
    registered any more; the legacy restore still recognises a `<group>:use-static`
