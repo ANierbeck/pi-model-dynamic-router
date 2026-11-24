@@ -1890,3 +1890,31 @@ Equivalent mutants:
 Gates on the result: `vitest` 3779 passed / 3 skipped (301 files, incl. the PR #209 contrast case), AGENTS §4 count updated to 3779; tsc exit 0, lint gate 0 findings, prettier clean.
 
 Open: `scripts/mutation-carryover.ts` still crashes on non-ledger input (`slice2-driveStream.json` is a raw array). That is the orchestrator ledger conversion, not part of this round.
+
+---
+
+## Nightly N12 (2026-11-24) — stream-orchestrator.ts carry-over gap
+
+Report: nightly run 45406167652 (main @ `7ce2502`). `src/stream-orchestrator.ts` had 299 undetected mutants (255 survived, 44 NoCoverage). The carry-over sent **293** of them to triage, although the 2026-11-04..08 rounds had given every one a verdict. Plan: `docs/plans/2026-11-24-orchestrator-mutation-ledger.md`. Dataset: `docs/mutation-data/nightly-orch-n12.json`.
+
+Why the carry-over missed them:
+- The slice 2/3 verdicts never became a ledger. `slice2-driveStream.json` is a `mutation-recheck.ts` result array, and passing it crashed the carry-over, which now refuses such input by name. The per-mutant verdicts live in `slice2-triage/*.md`, keyed by report line and description.
+- Code drift. Of the 293, 211 sit in `walkCandidates` (the old `driveStream`) and 43 in `openGroupStream` (old slice 1, where R4 still matches only 6). A probe confirmed that `mutation-instrument-one.ts` on `c101b27` reproduces all 642 slice-2 ids. Even fully converted, the old verdicts would match at most 118 of the 211; the other 175 of the 293 match nothing.
+
+| Step | Result |
+|---|---|
+| Full-suite recheck on `98e6259` | 65 killed (SUITE-KILLED, killer named), 224 survive, 3 time out, 1 unconfirmed |
+| Ruled with a verified reason | 18 EQUIVALENT |
+| Not ruled yet | 210 OPEN (new ledger category; the carry-over keeps it in triage) |
+
+The 18 equivalents:
+- 1974, 1975, 1983: abort plumbing. An abort fires at most once, and abort() on an aborted signal is a no-op.
+- 2333: an unknown fallback group resolves to null without side effects.
+- 3044, 3045: implied by the neighbouring conjuncts.
+- 2585, 2592, 2593, 2595, 2616, 2694, 2695, 2698, 2855, 3319, 3320, 3322: log text that names no decision, ruled equivalent per owner decision 2 of the 2026-11-04 plan. In each case the user-visible text comes from `pushStreamError` or `pushError`.
+
+Correction to the working notes of this round: a first draft called the `length > 0` → `length >= 0` mutants (2151, 3019, 3059, 3171, 3304) equivalent. That is wrong, because `>= 0` is always true. They are OPEN.
+
+The 210 OPEN rows continue in `docs/plans/2026-11-24-orchestrator-pin-round.md`.
+
+routing.ts in the same report: one survivor that the earlier ledgers did not cover, nightly id 1197, L490 `provider === VIRTUAL_PROVIDER` → `true`. The fresh run of 2026-11-22 counted it killed (id 374), but by an unrelated timing test. The full-suite recheck lets it survive. A pin in `test/no-coverage-sweep.test.ts` closes the gap ("a real model whose id is `dynamic` …"). Kill evidence: `mutation-recheck.ts --tests` shows it red on the mutant and green on the clean tree. Ledger row added to `nightly-routing-n12.json` (REAL-KILLED). After this round the carry-over gives routing.ts 0 triage.

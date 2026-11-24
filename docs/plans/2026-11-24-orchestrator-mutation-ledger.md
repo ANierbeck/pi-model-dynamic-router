@@ -1,8 +1,9 @@
 # Orchestrator mutants without a carry-over ledger
 
-**Status:** in progress — 2026-11-24. The agent chose the approach under
+**Status:** done — 2026-11-24. The agent chose the approach under
 the owner's standing go for the mutation triage ("1, jetzt machen",
-2026-11-22). The owner can overrule it under Open decisions.
+2026-11-22). The owner can overrule it under Open decisions. The 210 mutants
+left OPEN continue in `2026-11-24-orchestrator-pin-round.md`.
 
 **Verified against:** `main` @ `98e6259` (`src/` unchanged since `7ce2502`);
 the report of nightly run 45406167652 (main @ `7ce2502`);
@@ -73,7 +74,8 @@ Instead:
 
 - [x] 1. Carry-over refuses non-ledger input (red evidence: both new tests
       failed with the old `TypeError`).
-- [ ] 2. Full-suite recheck of the 293 → `nightly-orch-n12.json`.
-- [ ] 3. Triage the survivors (equivalents ledgered with reasons).
-- [ ] 4. Pins for real gaps, or a follow-up plan if there are many.
-- [ ] 5. `docs/mutation-triage.md` section, AGENTS §4 count, plan index row.
+- [x] 2. Full-suite recheck of the 293 → `nightly-orch-n12.json` (65 killed).
+- [x] 3. Survivors ruled where the reason was verified: 18 EQUIVALENT; the
+      other 210 stay OPEN (a new ledger category the carry-over keeps in triage).
+- [x] 4. Too many for this round → `2026-11-24-orchestrator-pin-round.md`.
+- [x] 5. `docs/mutation-triage.md` section, AGENTS §4 count, plan index rows.
