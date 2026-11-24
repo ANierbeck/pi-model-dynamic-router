@@ -97,8 +97,22 @@ function key(
   return JSON.stringify([file, mutator, replacement, original, context]);
 }
 
+/**
+ * Refuses anything that is not a `{ columns, rows }` ledger, e.g. a
+ * mutation-recheck.ts result array such as slice2-driveStream.json, which
+ * otherwise crashes later with a bare TypeError on `columns.indexOf`.
+ */
+function assertLedger(name: string, ledger: unknown): asserts ledger is Ledger {
+  const l = ledger as Partial<Ledger> | null;
+  if (!l || Array.isArray(l) || !Array.isArray(l.columns) || !Array.isArray(l.rows))
+    throw new Error(
+      `${name} is not a ledger (expected { columns, rows }; a mutation-recheck result array is not one)`
+    );
+}
+
 /** Adds (or refreshes) the `original` + `context` columns from the report the ledger was triaged on. */
-export function backfillLedger(report: Report, ledger: Ledger): Ledger {
+export function backfillLedger(report: Report, ledger: Ledger, name = 'ledger'): Ledger {
+  assertLedger(name, ledger);
   const ci = (c: string): number => ledger.columns.indexOf(c);
   const fileI = ci('file');
   const idI = ci('id');
@@ -136,6 +150,7 @@ interface Verdict {
 }
 
 function indexLedger(name: string, ledger: Ledger, into: Map<string, Verdict>): void {
+  assertLedger(name, ledger);
   const ci = (c: string): number => ledger.columns.indexOf(c);
   const [fileI, mutI, repI, origI, ctxI, catI, whyI] = [
     'file',
@@ -223,7 +238,9 @@ function main(argv: string[]): number {
     const [reportPath, ledgerPath] = backfill;
     writeFileSync(
       ledgerPath,
-      formatLedger(backfillLedger(readJson(reportPath) as Report, readJson(ledgerPath) as Ledger))
+      formatLedger(
+        backfillLedger(readJson(reportPath) as Report, readJson(ledgerPath) as Ledger, ledgerPath)
+      )
     );
     process.stdout.write(`backfilled original + context into ${ledgerPath}\n`);
     return 0;
