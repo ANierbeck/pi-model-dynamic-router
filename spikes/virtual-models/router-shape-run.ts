@@ -301,6 +301,9 @@ async function main(): Promise<void> {
   console.log(`\nsessions: ${sessionDir}\nleaf after tree: ${leafAfterTree}`);
   const fails = results.filter((l) => l.startsWith('FAIL')).length;
   console.log(`\n${results.length} checks, ${fails} FAIL`);
+  // Host-upgrade gate (AGENTS §10): a failed check must block the upgrade,
+  // so the runner exits nonzero — the caller relies on the exit status.
+  if (fails > 0) process.exit(1);
 }
 
 main().catch((err) => {

@@ -610,9 +610,10 @@ Pick up in a later round, each as its own plan where noted (§11):
   `docs/plans/2026-11-21-continue-restores-group.md`), `responseModel`
   metadata (1.5.0), and whether Pi's cache warmer handles a virtual model
   (unchecked). Needs its own plan (§11) with the shadow route
-  (`scripts/virtual-route-shadow.ts`) re-run on current logs; open decision
-  for the owner: widen the trigger beyond retry behavior. Plan written:
-  `docs/plans/2026-11-21-virtual-models-migration.md` (proposed).
+  (`scripts/virtual-route-shadow.ts`) re-run on current logs. Plan:
+  `docs/plans/2026-11-21-virtual-models-migration.md` (steps 2, 3, 5 merged;
+  step 4 live phase open). Trigger widened 2026-11-24 (owner): every host
+  upgrade re-runs the router-shape spike and the retry matrix (AGENTS §10).
 - **Felt quality vs. benchmark ranking** (2026-10-31 observation): needs its
   own plan — how owner ratings per model and task type enter the ranking
   (user layer, allowed per ADR-0025 §2C) without model names in shipped code.
