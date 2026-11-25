@@ -1,6 +1,6 @@
 # pi-model-dynamic-router
 
-> Pi extension that routes model group names to concrete provider/model pairs. Auto-discovers models and pricing. Balances intelligence (GDPval), cost, and availability.
+> Per-prompt model router for [Pi](https://github.com/earendil-works/pi): it classifies each task (locally with the **Laya** classifier, or an LLM chain), serves the cheapest model that is good enough for it, paces provider budgets and usage limits across the billing period, and fails over when a model, provider or quota runs out. Models, prices and benchmark scores are discovered automatically.
 
 > **Origin:** this project started in 2026 as a fork of [`a-canary/pi-model-router`](https://github.com/a-canary/pi-model-router) and has since been rewritten almost completely: content-based routing, failover, the Laya classifier and the test suite are new work. A small part of the original (about 0.5 % of today's lines, in 21 files) remains and keeps its copyright notice, see [`docs/upstream-attribution.md`](docs/upstream-attribution.md).
 
@@ -9,14 +9,23 @@
 - **Content-aware routing** — every prompt is classified (from a short
   follow-up to an architecture review) and routed to a matching model tier: free
   models for daily coding, top-tier models reserved for design and planning work.
+- **Local Laya classifier** — an optional on-device classifier (a 322M
+  multilingual encoder, installed with `pi-laya-model`) answers the task
+  category, typically in under a second, without sending the prompt to any
+  provider; the LLM classifier chain takes over when Laya is not installed,
+  not reachable, or its answer is vetoed (see
+  [Local Laya classifier stage](#local-laya-classifier-stage-experimental)).
 - **Automatic discovery & pricing** — the router scans local daemons (Ollama,
   LM Studio) and cloud catalogs, and scrapes Artificial Analysis benchmark
   scores (GDPval plus per-task capability columns: an Intelligence Index /
   Omniscience / HLE Diamond blend for planning, AA-Briefcase Elo for design,
   SciCode/Terminal-Bench for coding).
-- **Cost & quota balancing** — flat-fee subscription models carry the daily
-  load so expensive top-tier models stay available; quality-equivalence
-  windows pick the cheapest model that is just as good.
+- **Budget, cost & quota balancing** — flat-fee subscription models carry the
+  daily load so expensive top-tier models stay available; quality-equivalence
+  windows pick the cheapest model that is just as good; a per-provider budget
+  (tokens or USD per month) demotes a provider that spends ahead of pace (see
+  [Budget Pacing](#budget-pacing)); groups can be capped by price
+  (`max_cost`) or restricted to free models.
 - **Failover everywhere** — model backoff, provider cooldowns, cascading
   fallback groups, and mid-stream retries are all transparent: the session
   just continues on the next best model.
