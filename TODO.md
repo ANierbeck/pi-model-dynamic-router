@@ -3,7 +3,8 @@
 > **Status**: 2.0.0 prepared (`2.0.0-SNAPSHOT`), release awaits the owner's go
 > (AGENTS.md §1). Items closed in v1.6.1 or earlier are removed from this file;
 > their history lives in `CHANGELOG.md` and git.
-> **Last Updated**: 2026-11-18 (Dependabot: 0 open alerts, checked live 2026-11-18)
+> **Last Updated**: 2026-11-27 (checked against `origin/main` @ `ff3d801`; Dependabot: 0 open alerts, checked live 2026-11-27).
+> Plan status is owned by the plan index, `docs/plans/README.md`; this file names the tasks and points to the plans, it does not repeat their status.
 
 ## 📌 **IMPORTANT RULES**
 
@@ -243,6 +244,13 @@ MIT), so the notice must not be dropped before that is settled.
 > Plan: `docs/plans/2026-11-12-fork-remainder.md` (done). Measurement:
 > `docs/research/2026-11-12-fork-remainder-measurement.md` — 571 of 2933 baseline
 > lines still at HEAD (at most 19.5 %), 0 of 15 upstream files byte-identical.
+> **Still open (2026-11-27):** the file-by-file rewrite of the remaining original
+> text is not on `main`. Plan: `docs/plans/2026-11-21-fork-separation.md`
+> (approved 2026-11-21, not started; its precondition, the virtual-models
+> migration, has an open live phase). `docs/upstream-attribution.md` still names
+> the files that keep the original notice; `test/upstream-attribution.test.ts`
+> pins that list. Detaching the GitHub fork network is an owner action after
+> the rewrite.
 
 ## 🚀 **Medium-term Improvements** (1-3 days)
 
@@ -599,6 +607,28 @@ Pick up in a later round, each as its own plan where noted (§11):
   tooling fix). Laya nonetheless stays ACTIVE in the owner's live setup
   (owner 2026-11-12: it works well for him; `continue` answering less often
   may be the better read).
+- **Pi 1.7.0 alignment round** (Pi 1.7.0 published 2026-11-27; not run). Read
+  only, 2026-11-27: the extension event types are unchanged against 1.6.1; the
+  private `modelRegistry.runtime` reach-throughs are still declared; the 15
+  `pi-ai` symbols the router imports are still exported (a text check of the
+  `export` lines, not a compile); the removed telemetry setting is not
+  referenced by the router. NOT checked: tsc, the suite,
+  coverage, build and both spike gates on 1.7.0. AGENTS §10 requires that round
+  before the pins move from 1.6.1.
+- **Rate-limit reset from response headers** (`docs/plans/2026-11-27-provider-response-rate-limit.md`,
+  proposed, after 2.0.0). Step 1 is a spike with a stop condition: no usable
+  reset header on OpenRouter or Mistral closes the plan with no behaviour change.
+- **Budget-pacing counter** (`docs/plans/2026-11-25-budget-pacing-counter.md`,
+  proposed, after 2.0.0). The shipped pacing is per project and estimates spend
+  at the input price. Step 1 of the plan is a reproduction test before any
+  ledger code.
+- **Thinking level per group** (`docs/plans/2026-11-25-thinking-level-per-group.md`,
+  proposed, after 2.0.0). It needs `docs/plans/2026-11-24-gdpval-effort-variant.md`
+  first.
+- **Orchestrator pin round** (`docs/plans/2026-11-24-orchestrator-pin-round.md`,
+  proposed): the 210 OPEN N12 mutants in `stream-orchestrator.ts`, per that plan.
+- **Relative group thresholds** (`docs/plans/2026-11-24-relative-group-thresholds.md`,
+  proposed).
 - **Re-evaluate Pi virtual models** (owner 2026-11-21). The plan's trigger
   (`docs/plans/2026-11-04-virtual-models-routing.md`) was not run in the
   1.6.0 alignment round; run 2026-11-21: the retry matrix on Pi 1.6.0 equals
@@ -614,6 +644,9 @@ Pick up in a later round, each as its own plan where noted (§11):
   `docs/plans/2026-11-21-virtual-models-migration.md` (steps 2, 3, 5 merged;
   step 4 live phase open). Trigger widened 2026-11-24 (owner): every host
   upgrade re-runs the router-shape spike and the retry matrix (AGENTS §10).
+  Run 2026-11-27 on Pi 1.6.1: both gates exit 0 against the recorded 1.6.0
+  baselines (`docs/research/2026-11-27-pi-1.6.1-alignment.md`). Pi 1.7.0 is
+  not run yet (see the 1.7.0 entry below).
 - **Felt quality vs. benchmark ranking** (2026-10-31 observation): needs its
   own plan — how owner ratings per model and task type enter the ranking
   (user layer, allowed per ADR-0025 §2C) without model names in shipped code.
@@ -629,8 +662,15 @@ Pick up in a later round, each as its own plan where noted (§11):
   - §1 whole-range review: DONE. Round 1 on 2026-11-08 (PR #128); round 2 on
     2026-11-13 over v1.6.1..main (PR #170, 0 Critical; every finding dispositioned
     in `docs/research/2026-11-13-release-review-2_0_0.md`).
-  - Audit and pins: `npm audit` 0 findings; pi devDependency 1.5.2 = installed
-    host; shipped `log_level: "warn"`; 0 open Dependabot alerts (2026-11-13).
+  - Audit and pins: `npm audit` 0 findings (2026-11-13, not re-run for this
+    update); pi devDependencies pinned to exactly
+    1.6.1 = installed CLI (PR #214, 2026-11-27; a 1.7.0 round is still open);
+    shipped `log_level: "warn"`; 0 open Dependabot alerts (2026-11-27).
+  - Status 2026-11-27: `package.json` is still `2.0.0-SNAPSHOT`; the CHANGELOG
+    section is still `[2.0.0-SNAPSHOT]` (not cut to `[2.0.0]`); npm `latest` for
+    the router is 1.6.1. The weights-release preparation landed 2026-11-11
+    (`2b74a5b`: licences, `laya-release-check`, checklist). The r2 publish itself
+    is NOT verified in this update and stays open under its own §1 approval.
   - "Everything Laya" gate (owner 2026-11-08):
     (1) sole-classifier steps 3/5/6 — CLOSED as a gate 2026-11-18 (owner): an
     installed Laya leads the classifier chain, the standard chain runs without
@@ -724,4 +764,4 @@ None of them blocks the Laya release gate.
 
 ---
 
-*Last updated: 2026-11-18*
+*Last updated: 2026-11-27*
