@@ -1,6 +1,6 @@
 # pi-model-dynamic-router
 
-> Per-prompt model router for [Pi](https://github.com/earendil-works/pi): it classifies each task (locally with the **Laya** classifier, or an LLM chain), serves the cheapest model that is good enough for it, paces provider budgets and usage limits across the billing period, and fails over when a model, provider or quota runs out. Models, prices and benchmark scores are discovered automatically.
+> Per-prompt model router for [Pi](https://github.com/earendil-works/pi): it classifies each task (locally with the **Laya** classifier, or an LLM chain), serves the cheapest model that is good enough for it, demotes providers that spend ahead of their configured budget, and fails over when a model, provider or usage limit runs out. Models, prices and benchmark scores are discovered automatically.
 
 > **Origin:** this project started in 2026 as a fork of [`a-canary/pi-model-router`](https://github.com/a-canary/pi-model-router) and has since been rewritten almost completely: content-based routing, failover, the Laya classifier and the test suite are new work. A small part of the original (about 0.5 % of today's lines, in 21 files) remains and keeps its copyright notice, see [`docs/upstream-attribution.md`](docs/upstream-attribution.md).
 
@@ -23,7 +23,8 @@
 - **Budget, cost & quota balancing** — flat-fee subscription models carry the
   daily load so expensive top-tier models stay available; quality-equivalence
   windows pick the cheapest model that is just as good; a per-provider budget
-  (tokens or USD per month) demotes a provider that spends ahead of pace (see
+  (tokens or USD per month) demotes a provider that spends ahead of pace, counted
+  per project, with an input-price USD estimate (see
   [Budget Pacing](#budget-pacing)); groups can be capped by price
   (`max_cost`) or restricted to free models.
 - **Failover everywhere** — model backoff, provider cooldowns, cascading
@@ -142,7 +143,7 @@ When the classifier answers `continue` (a short continuation or confirmation, no
 
 ### Budget Pacing
 
-`providers.<p>.budget` declares a spend allowance per provider (user-layer key; absent = off). The router compares its own usage counter against the **linear** target for the current window — a provider that runs ahead of pace is **demoted**: it stays a candidate (failover still reaches it) but ranks behind every on-pace candidate in every group. The counter is the persistent usage log, cached context included; the window restarts each month at `reset_day` (clamped to shorter months). `unit: "tokens"` counts tokens, `unit: "usd"` estimates spend via the router's blended $/1M price. Works for capped subscriptions and pay-per-token spend limits alike:
+`providers.<p>.budget` declares a spend allowance per provider (user-layer key; absent = off). The router compares its own usage counter against the **linear** target for the current window — a provider that runs ahead of pace is **demoted**: it stays a candidate (failover still reaches it) but ranks behind every on-pace candidate in every group. The counter is the persistent usage log of the **current project**, cached context included (usage from other projects is not counted); usage limits of subscription providers are not paced — they are handled reactively, by cooldown and failover, once the provider reports them; the window restarts each month at `reset_day` (clamped to shorter months). `unit: "tokens"` counts tokens, `unit: "usd"` estimates spend by pricing every token at the model's input price, so cache-heavy usage is overstated (a planned fix: `docs/plans/2026-11-25-budget-pacing-counter.md`). Works for capped subscriptions and pay-per-token spend limits alike:
 
 ```json
 {

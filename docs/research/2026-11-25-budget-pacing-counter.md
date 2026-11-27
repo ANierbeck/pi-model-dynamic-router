@@ -1,9 +1,10 @@
 # Budget pacing counter: measurements, 2026-11-25
 
 Measurements behind `docs/plans/2026-11-25-budget-pacing-counter.md`.
-Window: 2026-11-01 to 2026-11-25. Budget under test: the owner's user layer,
-`providers.mistral.budget = { amount: 300, unit: "usd", period: "month",
-reset_day: 1 }`. Linear target on 2026-11-25: $243.
+Window: 2026-11-01 to 2026-11-25. Budget under test: a monthly USD budget
+on the `mistral` provider, `reset_day: 1`. The exact amount is not
+published; money figures below are given as a share of that budget B.
+Linear target on 2026-11-25: 81 % of B.
 
 ## Sources
 
@@ -32,7 +33,7 @@ Mistral candidates in `pool` records with the `paced` flag:
 | pi-model-router-fork | 11-19..11-25 | 7656 | 100 % |
 | project A | 11-24..11-25 | 2141 | 0 % |
 | project B | 11-24 | 1632 | 0 % |
-| virtual-selection | 11-21 | 278 | 0 % |
+| project E | 11-21 | 278 | 0 % |
 | project C | 11-21, 11-24 | 127 | 0 % |
 | project D | 11-20..11-24 | 118 | 0 % |
 
@@ -43,12 +44,12 @@ pi-model-router-fork on every day from 2026-11-07.
 
 | Project | usage_log tokens | Router estimate (all tokens × input price) | Per component from usage_log (rest as input .. as output) | Pi `usage.cost.total` |
 |---|---|---|---|---|
-| pi-model-router-fork | 1133M (93.8 % cacheRead) | $785 | $107 .. $192 | $117.45 (1193M tokens) |
-| project A | 42M (89.5 % cacheRead) | $28 | $5 .. $12 | $21.35 (195M tokens) |
-| project D | — | — | — | $14.50 |
-| project C | — | — | — | $7.60 |
-| others | — | — | — | $0.57 |
-| **all projects** | | | | **$161.47** (1497M tokens) |
+| pi-model-router-fork | 1133M (93.8 % cacheRead) | 262 % of B | 36 % .. 64 % of B | 39 % of B (1193M tokens) |
+| project A | 42M (89.5 % cacheRead) | 9 % of B | 2 % .. 4 % of B | 7 % of B (195M tokens) |
+| project D | — | — | — | 5 % of B |
+| project C | — | — | — | 3 % of B |
+| others | — | — | — | < 1 % of B |
+| **all projects** | | | | **54 % of B** (1497M tokens) |
 
 `usage_log` entries carry `tokens`, `cacheRead` and `cacheWrite`, but not
 input and output separately (7748 of 8212 November Mistral entries in

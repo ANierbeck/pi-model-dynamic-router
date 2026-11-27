@@ -1,7 +1,7 @@
 {
   "name": "@anierbeck/pi-model-dynamic-router",
   "version": "2.0.0-SNAPSHOT",
-  "description": "Per-prompt model router for Pi: classifies each task (locally with the Laya classifier, or an LLM chain), serves the cheapest model that is good enough, paces provider budgets and usage limits, and fails over across providers.",
+  "description": "Per-prompt model router for Pi: classifies each task (locally with the Laya classifier, or an LLM chain), serves the cheapest model that is good enough, demotes providers that spend ahead of their configured budget, and fails over when a model, provider or usage limit runs out.",
   "type": "module",
   "private": false,
   "engines": {
