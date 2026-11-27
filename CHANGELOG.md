@@ -129,6 +129,16 @@ without the owner's explicit release approval).
   exist in 1.6.0. Pi 1.6.0 breaking change `render()` → `readonly string[]`
   does not affect the router: the footer builds a fresh array per render and
   never mutates a returned one.
+- **Host alignment to pi 1.6.1** (devDependencies `^1.6.0` → exactly `1.6.1`, so
+  an unlocked install cannot pick up a host that has not had its own round). No
+  extension change needed: 1.6.1 removes `SettingsManager.get/setShowCacheMissNotices`
+  (replaced by per-notice settings) and extends `after_provider_response` to
+  HTTP errors and retried attempts — the router uses neither. The dev lock
+  moves `@google/genai` 2.32.0 → 3.6.1 with the host (dev only; pi stays
+  `--external`). Checked: `tsc`, lint gate, vitest (3783 passed / 3 skipped),
+  coverage thresholds unchanged, build, the `modelRegistry.runtime`
+  reach-throughs, and both virtual-model spike gates against the Pi 1.6.0
+  baselines (exit 0). Details: `docs/research/2026-11-27-pi-1.6.1-alignment.md`.
 
 ### Fixed
 
