@@ -18,6 +18,7 @@ import {
   SessionManager,
   SettingsManager,
 } from '@earendil-works/pi-coding-agent';
+import { shapeVerdict, type CheckResult } from './shape-verdict.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const PROBE = join(here, 'router-shape-probe.ts');
@@ -29,11 +30,11 @@ const agentDir = join(root, 'agent');
 const sessionDir = join(root, 'sessions');
 for (const d of [cwd, agentDir, sessionDir]) mkdirSync(d, { recursive: true });
 
-const results: string[] = [];
+const results: CheckResult[] = [];
 function check(id: string, ok: boolean | null, what: string, detail: unknown = ''): void {
   const tag = ok === null ? 'INFO' : ok ? 'PASS' : 'FAIL';
   const line = `${tag}  ${id.padEnd(5)} ${what}${detail === '' ? '' : `  — ${typeof detail === 'string' ? detail : JSON.stringify(detail)}`}`;
-  results.push(line);
+  results.push({ id, ok });
   console.log(line);
 }
 
@@ -299,11 +300,18 @@ async function main(): Promise<void> {
   process.env.SPIKE_REREGISTER = '0';
 
   console.log(`\nsessions: ${sessionDir}\nleaf after tree: ${leafAfterTree}`);
-  const fails = results.filter((l) => l.startsWith('FAIL')).length;
+  const fails = results.filter((r) => r.ok === false).length;
   console.log(`\n${results.length} checks, ${fails} FAIL`);
-  // Host-upgrade gate (AGENTS §10): a failed check must block the upgrade,
-  // so the runner exits nonzero — the caller relies on the exit status.
-  if (fails > 0) process.exit(1);
+  // Host-upgrade gate (AGENTS §10): a deviation from the recorded baseline
+  // blocks the upgrade, so the runner exits nonzero — the caller relies on
+  // the exit status. A recorded failure (shape-verdict.ts) does not.
+  const verdict = shapeVerdict(results);
+  for (const id of verdict.unexpectedFail) console.log(`DEVIATION  ${id} fails; not a recorded failure`);
+  for (const id of verdict.unexpectedPass) {
+    console.log(`DEVIATION  ${id} no longer fails; re-record the baseline in shape-verdict.ts and the spike note`);
+  }
+  console.log(verdict.exitCode === 0 ? 'matches the Pi 1.6.0 baseline' : 'deviates from the Pi 1.6.0 baseline');
+  process.exit(verdict.exitCode);
 }
 
 main().catch((err) => {

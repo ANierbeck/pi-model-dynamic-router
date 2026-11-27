@@ -288,10 +288,15 @@
   round also runs `spikes/virtual-models/run-router-shape.sh` (starts the
   fake provider itself, runs the two-layer checks) and
   `spikes/virtual-models/run-retry-matrix.sh` (the retry matrix, skipped in
-  the 1.6.0 round) against the new host. Both exit nonzero on a failed
-  check — the matrix compares against the recorded Pi 1.6.0 baseline — and
-  that status blocks the upgrade until the deviation is understood; the
-  result goes to `docs/research/`.
+  the 1.6.0 round) against the new host. Both compare the run with the
+  recorded Pi 1.6.0 baseline (`spikes/virtual-models/shape-verdict.ts`, the
+  `run` table of the matrix) and exit nonzero on any deviation — in either
+  direction — on a hang past the cap, or when the fake provider does not
+  start; that status blocks the upgrade until the deviation is understood
+  and the baseline re-recorded. The shape runner imports Pi from this
+  repo's `node_modules`, so it tests the new host only after the
+  devDependency bump; the matrix runs the installed `pi` CLI. The result
+  goes to `docs/research/`.
 - Before a release is proposed (§1), include the current `npm audit`
   summary in the report.
 
