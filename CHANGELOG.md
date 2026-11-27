@@ -129,7 +129,8 @@ without the owner's explicit release approval).
   exist in 1.6.0. Pi 1.6.0 breaking change `render()` → `readonly string[]`
   does not affect the router: the footer builds a fresh array per render and
   never mutates a returned one.
-- **Host alignment to pi 1.6.1** (devDependencies `^1.6.0` → `^1.6.1`). No
+- **Host alignment to pi 1.6.1** (devDependencies `^1.6.0` → exactly `1.6.1`, so
+  an unlocked install cannot pick up a host that has not had its own round). No
   extension change needed: 1.6.1 removes `SettingsManager.get/setShowCacheMissNotices`
   (replaced by per-notice settings) and extends `after_provider_response` to
   HTTP errors and retried attempts — the router uses neither. The dev lock
