@@ -88,9 +88,9 @@
     "typebox": "*"
   },
   "devDependencies": {
-    "@earendil-works/pi-ai": "1.6.1",
-    "@earendil-works/pi-coding-agent": "1.6.1",
-    "@earendil-works/pi-tui": "1.6.1",
+    "@earendil-works/pi-ai": "1.7.0",
+    "@earendil-works/pi-coding-agent": "1.7.0",
+    "@earendil-works/pi-tui": "1.7.0",
     "@eslint/js": "^10.0.1",
     "@stryker-mutator/api": "10.1.1",
     "@stryker-mutator/core": "^10.1.1",

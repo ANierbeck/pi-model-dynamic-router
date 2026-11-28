@@ -139,6 +139,17 @@ without the owner's explicit release approval).
   coverage thresholds unchanged, build, the `modelRegistry.runtime`
   reach-throughs, and both virtual-model spike gates against the Pi 1.6.0
   baselines (exit 0). Details: `docs/research/2026-11-27-pi-1.6.1-alignment.md`.
+- **Host alignment to pi 1.7.0** (devDependencies exactly `1.6.1` → exactly
+  `1.7.0`). No extension change needed: 1.7.0 removes telemetry (the router
+  does not use `SettingsManager`), adds `--agent-dir` (applied by Pi as
+  `PI_CODING_AGENT_DIR`, which the router already follows) and terminal
+  session resume via `pi --session <id>` (the group restore reads the branch
+  at every `session_start`). The extension API and the `modelRegistry.runtime`
+  reach-throughs are unchanged. The lock moves only the eight host packages.
+  Checked: `tsc`, lint gate, vitest with coverage (3804 passed / 3 skipped,
+  thresholds unchanged), build, and both virtual-model spike gates against the
+  Pi 1.6.0 baselines (exit 0). Details:
+  `docs/research/2026-11-28-pi-1.7.0-alignment.md`.
 
 ### Fixed
 
