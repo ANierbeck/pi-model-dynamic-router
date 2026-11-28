@@ -541,7 +541,9 @@ Pick up in a later round, each as its own plan where noted (§11):
   runtime requirement for inference — the tradeoff moves to the 290 MB native
   dependency (AGENTS.md §10) and 1.29 GB weights. int8 is ruled out (69 %
   agreement). Remaining steps (`/health` contract tests done 2026-11-08):
-  r2 weights publish (own §1 approval) — the last open step. Packaging is
+  r2 weights publish — **DONE 2026-11-28** (owner go; GitHub Release
+  `laya-router-v1.0.0` published, `laya-release-check` reports `ok`, and
+  `laya-models/manifest.json` is `published: true` via PR #220). Packaging is
   DONE 2026-11-12: the ONNX sidecar package `laya-sidecar/` (plan
   `2026-11-11-onnx-sidecar-package.md`, PR #157 — npm package, parity
   180/180 golden and 298/300 corpus) and the one-backend installer (PR #159:
@@ -558,21 +560,22 @@ Pick up in a later round, each as its own plan where noted (§11):
   (`docs/plans/2026-11-16-laya-sidecar-in-router-tarball.md`). No second
   publish, no second version to keep in step.
 - **Laya model artifact + install skill**
-  (`docs/plans/2026-11-08-laya-model-artifact.md`, in progress 2026-11-08;
+  (`docs/plans/2026-11-08-laya-model-artifact.md`, done 2026-11-28;
   **2.0.0 blocker**, part of "everything Laya"): no artifact a user can
   install — `checkpoint` is a hand-typed HF path, the router never downloads
   weights, nothing verifies what arrived, and the head was not pinned to the
   router's head. **In progress 2026-11-08:** manifest, head parity gate and the
   `pi-laya-model` installer, the `/health` identity (router + reference
   sidecar) and the `/router status` mismatch warnings landed, and so did the
-  install skill `skills/router-laya-install/`. Remaining: the owner's
-  weights release go (§1) and a smoke test of the skill in Pi (unverified: the
-  skill's call of `pi-laya-model`, and whether the bin reaches the PATH). Owner decisions 2026-11-08: weights as GitHub Release
+  install skill `skills/router-laya-install/`. Remaining: a smoke test of the
+  skill in Pi (unverified: the skill's call of `pi-laya-model`, and whether the
+  bin reaches the PATH). Owner decisions 2026-11-08: weights as GitHub Release
   assets + manifest in the repo, ONNX as the default backend, an install skill
   that asks first; install root `~/.pi/agent/laya-models/`, a Pi-independent
   `pi-laya-model` bin, runtime (Python/Node) and backend chosen by the user,
   weights in a dedicated release line of this repo. Open: whether the first
-  weights publish stays a 2.0.0 blocker (publish itself needs its own §1 go).
+  weights publish stays a 2.0.0 blocker — **no, it shipped 2026-11-28** (GitHub
+  Release `laya-router-v1.0.0`, own §1 go; manifest `published: true` via PR #220).
   **2026-11-12:** the release staging directory is cleaned (four hard-linked
   MLX files removed, originals intact) and `laya-release-check` passes for
   `router@1.0.0`; the installer offers the ONNX backend only (PR #159).
@@ -690,14 +693,15 @@ Pick up in a later round, each as its own plan where noted (§11):
     (2) sidecar distribution — packaging, parity (golden 180/180, corpus 298/300,
     live queue 259/260) and per-platform docs DONE; since 2026-11-16 the sidecar
     ships inside the router tarball and needs no publish of its own; the r2
-    weights publish is OPEN (own §1 approval; `laya-release-check` reports `ok`
-    for `laya-router-v1.0.0`);
+    weights publish is DONE 2026-11-28 (owner go; GitHub Release
+    `laya-router-v1.0.0` published, `laya-release-check` reported `ok`,
+    manifest `published: true` shipped via PR #220);
     (3) rename `classifier_laya` → `integrations.laya` — DONE 2026-11-12 (PR #166);
     (4) `~/.laya-ft` fallback label migration — DONE 2026-11-13.
   - Open before a release proposal: the router version named explicitly
     (AGENTS.md §1). The sole-classifier closure is done (ADR 0035, 2026-11-18);
-    the r2 weights publish keeps its own §1 approval; the sidecar no longer
-    has a version of its own (2026-11-16).
+    the r2 weights publish went out 2026-11-28 under its own §1 go; the sidecar
+    no longer has a version of its own (2026-11-16).
   Tag, GitHub Release and npm publish are each a separate explicit owner approval
   that names the concrete version (AGENTS.md §1). Nothing in this list implies them.
 
