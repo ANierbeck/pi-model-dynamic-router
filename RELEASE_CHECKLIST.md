@@ -15,7 +15,7 @@ and fill in the version-specific details. **Replace every `<VERSION>` and
 
 ### Functionality Verified (re-run against current code)
 - [ ] `/router scan` completes without timeout
-- [ ] Expected models appear in the expected groups (spot-check strategic/tactical)
+- [ ] Expected models appear in the expected groups (spot-check e.g. code_complex and planning)
 - [ ] Exclude rules apply to the live TUI table, not just the dynamic config
 - [ ] Fallback cascade reaches a healthy model when the first candidate fails
 

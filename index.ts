@@ -1,7 +1,7 @@
 /**
  * pi-model-router — Passive model group routing for pi
  *
- * Routes group names (strategic/tactical/operational/scout) to concrete models.
+ * Routes group names (simple/standard/code_complex/design/planning) to concrete models.
  * Balances intelligence, cost, and availability via:
  *   - GDPval-ranked selection pipelines
  *   - Subscription cost discount (sunk cost preference)
