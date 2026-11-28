@@ -28,13 +28,10 @@ config or start anything before the user says yes.
 
 ## Current state
 
-Two things limit what this skill can finish today. Say them to the user
+One thing limits what this skill can finish today. Say it to the user
 before starting, so nothing surprises them later:
 
-1. **The weights release is not published yet.** The manifest marks
-   `router@1.0.0` as unpublished, and the installer refuses it (step 1). Once the
-   owner publishes the release, the same steps work unchanged.
-2. **The ONNX runtime is a separate download.** The sidecar code ships inside
+1. **The ONNX runtime is a separate download.** The sidecar code ships inside
    the router package, but its native runtime (about 115 MB) is installed on
    demand in step 8. Until the user runs that command, nothing serves the
    model. The install, the verification and the config work without it, and

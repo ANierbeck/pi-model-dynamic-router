@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { healthPayload, servedHead } from '../dist/identity.js';
 
@@ -72,4 +72,27 @@ test('a malformed file entry drops artifact_sha256 on both sides', () => {
   const ts = viaTs(dir, null);
   assert.equal('artifact_sha256' in ts, false);
   assert.deepEqual(ts, viaPython(dir, null));
+});
+
+// Defence in depth (2.0.0 review round 3): the install record is written only
+// by the hash-verifying installer, but a head_file.path that leaves the
+// install directory must be refused like an unreadable file - on both sides.
+test('head_file.path leaving the install dir is refused on both sides', () => {
+  const outer = mkdtempSync(join(tmpdir(), 'identity-outer-'));
+  writeFileSync(join(outer, 'head.json'), JSON.stringify(HEAD));
+  const escape = {
+    ...record,
+    head_file: { path: join('..', basename(outer), 'head.json'), format: 'raw' },
+  };
+  const dir = dirWith(escape);
+  assert.equal(servedHead(dir, null), null);
+  assert.deepEqual(viaTs(dir, null), viaPython(dir, null));
+
+  const absolute = {
+    ...record,
+    head_file: { path: join(outer, 'head.json'), format: 'raw' },
+  };
+  const dir2 = dirWith(absolute);
+  assert.equal(servedHead(dir2, null), null);
+  assert.deepEqual(viaTs(dir2, null), viaPython(dir2, null));
 });
