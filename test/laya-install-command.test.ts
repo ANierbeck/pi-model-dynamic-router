@@ -602,12 +602,15 @@ describe('/router laya through the real handler', () => {
     // ctx.mode is "rpc" and ctx.hasUI is true there (pi docs, rpc-extension-ui):
     // confirm/select/input arrive as extension_ui_request and are answered by the
     // client. Refusing rpc would block every non-terminal client. The shipped
-    // manifest is unpublished, so the wizard stops at the offer — which proves the
-    // guard let it through (a refused run would say "interactive"/"TUI").
-    const h = setup({ mode: 'rpc', confirm: async () => true });
+    // manifest is published now (laya-router-v1.0.0, GitHub Release 2026-11-28),
+    // so the wizard runs its steps and reaches the first dialog — before the
+    // download — to prove the guard let rpc through and the step questions are
+    // answerable. The test declines that first dialog, so nothing is downloaded.
+    const h = setup({ mode: 'rpc', confirm: async () => false });
     const out = await h.run('laya install');
     expect(out).not.toMatch(/interactive|TUI/);
-    expect(out).toMatch(/not published yet|Download|nothing was downloaded/i);
+    expect(h.ui.confirm).toHaveBeenCalled();
+    expect(out).toMatch(/nothing was downloaded/);
     expect(fs.existsSync(path.join(harness.paths.agentDir, 'laya-models'))).toBe(false);
   });
 
@@ -619,10 +622,11 @@ describe('/router laya through the real handler', () => {
   });
 
   // The declining paths (download, runtime, config) are pinned against fakes above.
-  // This test uses the REAL deps and the shipped manifest, so it can only prove one
-  // thing: whatever the wizard decides, nothing lands in the agent dir. Naming it
-  // after the "no" path would promise coverage it does not have while the shipped
-  // manifest stays unpublished.
+  // This test uses the REAL deps and the shipped manifest (now published,
+  // laya-router-v1.0.0), so it can only prove one thing: whatever the wizard decides,
+  // nothing lands in the agent dir. Naming it after the "no" path would promise
+  // coverage it does not have; the release guard no longer fires before the first
+  // dialog (the release went out), so the wizard asks and the test declines.
   it('/router laya install in the TUI leaves the agent dir untouched', async () => {
     const h = setup({ mode: 'tui', confirm: async () => false });
     const out = await h.run('laya install');

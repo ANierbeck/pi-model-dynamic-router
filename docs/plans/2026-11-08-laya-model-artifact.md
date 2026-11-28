@@ -1,14 +1,10 @@
 # Laya model artifact: versioned, verifiable, installable
 
-**Status:** in progress 2026-11-08 — manifest, head parity gate and the
-`pi-laya-model` installer are done (measurements:
-[`docs/research/2026-11-08-laya-r2-artifact-set.md`](../research/2026-11-08-laya-r2-artifact-set.md));
-the `/health` identity (router and reference sidecar) and `/router status`
-are done; the install skill (`skills/router-laya-install/`) is done and
-the docs are mostly done; the model is renamed `r2` → `router` (2026-11-11,
-decision D7 of `2026-11-11-onnx-sidecar-package.md`, tag `laya-router-v1.0.0`); the
-owner's weights release is the open step. Part of the 2.0.0 "everything
-Laya" release gate (`2026-10-25-laya-sole-classifier.md`, "Release gate").
+**Status:** done 2026-11-28 — every step above is closed; the owner's weights
+release went out as GitHub Release `laya-router-v1.0.0` (tag created, assets
+uploaded, rehearsal green, `published: true` shipped through this repo, 2026-11-28).
+Part of the 2.0.0 "everything Laya" release gate
+(`2026-10-25-laya-sole-classifier.md`, "Release gate").
 Owner decisions 2026-11-08: weights as **GitHub Release assets + manifest in
 the repo**; ONNX as the default backend; the install path is a **skill** that
 asks before it acts.
@@ -234,4 +230,6 @@ whether `~/.pi/agent/laya-models/` collides with anything Pi owns.
       `RELEASE_CHECKLIST.md`. **Not checked:** whether the Gemma 2 tokenizer
       that mmBERT-base uses carries terms of its own; the upstream model card
       declares Apache-2.0 for the files it ships.
-- [ ] Owner go for the weights release, then publish the assets (`laya-router-v1.0.0`).
+- [x] Owner go for the weights release, then publish the assets
+      (`laya-router-v1.0.0`) — 2026-11-28: release published, rehearsal
+      green, manifest `published: true` shipped through a PR.
