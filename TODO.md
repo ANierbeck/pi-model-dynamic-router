@@ -1,9 +1,10 @@
 # 🚀 pi-model-dynamic-router - Current Tasks & Roadmap
 
-> **Status**: 2.0.0 prepared (`2.0.0-SNAPSHOT`), release awaits the owner's go
-> (AGENTS.md §1). Items closed in v1.6.1 or earlier are removed from this file;
+> **Status**: 2.0.0 RELEASED 2026-11-28 (owner go per AGENTS.md §1: tag `v2.0.0`,
+> GitHub Release v2.0.0, npm publish, npm `latest` = 2.0.0). Items closed in v1.6.1
+> or earlier are removed from this file;
 > their history lives in `CHANGELOG.md` and git.
-> **Last Updated**: 2026-11-28 (checked against `origin/main` @ `892e2ed`; `npm audit` re-run 2026-11-28: 0 findings; Dependabot: 0 open alerts, checked live 2026-11-27).
+> **Last Updated**: 2026-11-28 (checked against `origin/main` @ `8bcb31f`; `npm audit` re-run 2026-11-28: 0 findings; Dependabot: 0 open alerts, checked live 2026-11-27).
 > Plan status is owned by the plan index, `docs/plans/README.md`; this file names the tasks and points to the plans, it does not repeat their status.
 
 ## 📌 **IMPORTANT RULES**
@@ -670,8 +671,8 @@ Pick up in a later round, each as its own plan where noted (§11):
   November compactions cost $2.97). 5c (fresh-session suggestion +
   `/router fresh`) was pulled back into 2.0 and is implemented 2026-11-19
   (`docs/plans/2026-11-19-fresh-session-suggestion.md`).
-- **Release prep for 2.0.0** (owner 2026-11-07: the next release is 2.0.0; `package.json`
-  is `2.0.0-SNAPSHOT`). Status 2026-11-13:
+- **Release prep for 2.0.0** (owner 2026-11-07: the next release is 2.0.0).
+  Status 2026-11-13:
   - §1 whole-range review: DONE. Round 1 on 2026-11-08 (PR #128); round 2 on
     2026-11-13 over v1.6.1..main (PR #170, 0 Critical; every finding dispositioned
     in `docs/research/2026-11-13-release-review-2_0_0.md`).
@@ -679,11 +680,16 @@ Pick up in a later round, each as its own plan where noted (§11):
     devDependencies pinned to exactly
     1.7.0 = installed CLI (PR #218, 2026-11-28);
     shipped `log_level: "warn"`; 0 open Dependabot alerts (2026-11-27).
-  - Status 2026-11-27: `package.json` is still `2.0.0-SNAPSHOT`; the CHANGELOG
-    section is still `[2.0.0-SNAPSHOT]` (not cut to `[2.0.0]`); npm `latest` for
-    the router is 1.6.1. The weights-release preparation landed 2026-11-11
-    (`2b74a5b`: licences, `laya-release-check`, checklist). The r2 publish itself
-    is NOT verified in this update and stays open under its own §1 approval.
+  - Status 2026-11-28: 2.0.0 is RELEASED. Release prep PR #223 (`5bfa841`) cut
+    the CHANGELOG to `[2.0.0]` and set the version to 2.0.0; the owner gave the
+    release-specific go (AGENTS.md §1); tag `v2.0.0` at `8bcb31f`, GitHub
+    Release v2.0.0 published (notes from the CHANGELOG section), publish
+    workflow run 46160582334 green — npm `latest` = 2.0.0, tarball shasum
+    `3ae3579c78074b50cdbff20a3c4404ea588902a8`, signed provenance.
+    Clean-state smoke test green from the published package: `pi install` in
+    an isolated agent dir (extension loads, `/router scan` recognized as a
+    command), `pi-laya-model runtime install`, weights `router@1.0.0`
+    install, serve + `/health` (head sha matches the manifest) and `/classify`.
   - "Everything Laya" gate (owner 2026-11-08):
     (1) sole-classifier steps 3/5/6 — CLOSED as a gate 2026-11-18 (owner): an
     installed Laya leads the classifier chain, the standard chain runs without
@@ -698,12 +704,8 @@ Pick up in a later round, each as its own plan where noted (§11):
     manifest `published: true` shipped via PR #220);
     (3) rename `classifier_laya` → `integrations.laya` — DONE 2026-11-12 (PR #166);
     (4) `~/.laya-ft` fallback label migration — DONE 2026-11-13.
-  - Open before a release proposal: the router version named explicitly
-    (AGENTS.md §1). The sole-classifier closure is done (ADR 0035, 2026-11-18);
-    the r2 weights publish went out 2026-11-28 under its own §1 go; the sidecar
-    no longer has a version of its own (2026-11-16).
-  Tag, GitHub Release and npm publish are each a separate explicit owner approval
-  that names the concrete version (AGENTS.md §1). Nothing in this list implies them.
+  - The release go named the concrete version (AGENTS.md §1); tag, GitHub
+    Release and npm publish all happened under that go on 2026-11-28.
 
 ### Owner backlog (registered 2026-10-06, awaiting owner's go to start)
 
