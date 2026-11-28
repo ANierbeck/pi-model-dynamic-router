@@ -97,8 +97,15 @@ def served_head(model_dir: Optional[str], head_json: Optional[str]) -> Tuple[Opt
     rec = read_record(model_dir)
     if rec is not None:
         hf = rec["head_file"]
+        # Defence in depth, mirroring the installer: the record is written only by
+        # the hash-verifying installer, but a head_file.path that leaves the
+        # install directory is refused like an unreadable file.
+        model_root = pathlib.Path(model_dir).resolve()
+        head_path = (model_root / str(hf.get("path"))).resolve()
+        if not head_path.is_relative_to(model_root):
+            return None, None
         try:
-            text = (pathlib.Path(model_dir) / str(hf.get("path"))).read_text(encoding="utf-8")
+            text = head_path.read_text(encoding="utf-8")
         except OSError:
             return None, None
         head = head_from_text(str(hf.get("format")), text)

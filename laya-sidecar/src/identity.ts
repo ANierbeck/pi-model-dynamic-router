@@ -3,7 +3,7 @@
 // Both hashes must equal the Python output byte for byte; test/identity-parity.test.mjs pins it.
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, resolve, sep } from 'node:path';
 
 export const INSTALL_RECORD = 'manifest.json';
 
@@ -93,9 +93,15 @@ export function servedHead(
   }
   const rec = readRecord(modelDir);
   if (!rec) return null;
+  // Defence in depth, mirroring the installer's `inside()` check: the record
+  // is written only by the hash-verifying installer, but a head_file.path that
+  // leaves the install directory is refused like an unreadable file.
+  const modelRoot = resolve(modelDir);
+  const headPath = resolve(modelDir, String(rec.head_file.path));
+  if (!headPath.startsWith(modelRoot + sep)) return null;
   let text: string;
   try {
-    text = readFileSync(join(modelDir, String(rec.head_file.path)), 'utf8');
+    text = readFileSync(headPath, 'utf8');
   } catch {
     return null;
   }
