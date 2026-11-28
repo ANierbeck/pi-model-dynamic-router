@@ -3,7 +3,7 @@
 > **Status**: 2.0.0 prepared (`2.0.0-SNAPSHOT`), release awaits the owner's go
 > (AGENTS.md §1). Items closed in v1.6.1 or earlier are removed from this file;
 > their history lives in `CHANGELOG.md` and git.
-> **Last Updated**: 2026-11-27 (checked against `origin/main` @ `ff3d801`; Dependabot: 0 open alerts, checked live 2026-11-27).
+> **Last Updated**: 2026-11-28 (checked against `origin/main` @ `892e2ed`; `npm audit` re-run 2026-11-28: 0 findings; Dependabot: 0 open alerts, checked live 2026-11-27).
 > Plan status is owned by the plan index, `docs/plans/README.md`; this file names the tasks and points to the plans, it does not repeat their status.
 
 ## 📌 **IMPORTANT RULES**
@@ -152,9 +152,9 @@ groups no category reached. Resolved by the five-group layout
 an honest-meaning allowlist). Breaking config rename: `classifier_cloud_fallback`
 → `classifier_cloud_chain` (warned, not aliased). Plan:
 `docs/plans/2026-10-25-fallback-naming.md`. **Owner go given 2026-11-08
-(part of the 2.0.0 Laya gate):** the `~/.laya-ft` labeling tooling's
-`fallback` corpus label is renamed before 2.0.0 — migrating existing labels
-(corpus, queue, labels, golden set) is owner-side work that does not ship
+(part of the 2.0.0 Laya gate), DONE 2026-11-13:** the `~/.laya-ft` labeling
+tooling's `fallback` corpus label was renamed — migrating existing labels
+(corpus, queue, labels, golden set) was owner-side work that does not ship
 with the router.
 
 ### ✅ **Compaction reason text named the wrong group — CLOSED 2026-11-02 (already fixed)**
@@ -607,14 +607,23 @@ Pick up in a later round, each as its own plan where noted (§11):
   tooling fix). Laya nonetheless stays ACTIVE in the owner's live setup
   (owner 2026-11-12: it works well for him; `continue` answering less often
   may be the better read).
-- **Pi 1.7.0 alignment round** (Pi 1.7.0 published 2026-11-27; not run). Read
-  only, 2026-11-27: the extension event types are unchanged against 1.6.1; the
-  private `modelRegistry.runtime` reach-throughs are still declared; the 15
-  `pi-ai` symbols the router imports are still exported (a text check of the
-  `export` lines, not a compile); the removed telemetry setting is not
-  referenced by the router. NOT checked: tsc, the suite,
-  coverage, build and both spike gates on 1.7.0. AGENTS §10 requires that round
-  before the pins move from 1.6.1.
+  **Update 2026-11-18 (ADR 0035):** steps 3, 5 and 6 are no longer release
+  gates — an installed Laya leads the classifier chain (`mode: "active"`),
+  without one the standard chain of ADR 0032 runs. The data collection above
+  continues in the owner's setup but does not block 2.0.0; the decision is
+  recorded in the plan (`docs/plans/2026-10-25-laya-sole-classifier.md`).
+- ✅ **Pi 1.7.0 alignment round — DONE 2026-11-28** (PR #218, `751c5a7`;
+  report `docs/research/2026-11-28-pi-1.7.0-alignment.md`). The three pi
+  devDependency pins moved from exactly 1.6.1 to exactly 1.7.0 (= installed
+  CLI). Verified: tsc, lint gate (0 findings), `test:coverage` 3804 passed /
+  3 skipped with thresholds unchanged, build, and both spike gates
+  (`run-router-shape.sh`, `run-retry-matrix.sh`) exit 0 against the recorded
+  1.6.0 baselines. No extension change was needed: the removed telemetry
+  setting is not referenced, `--agent-dir` resolves via
+  `PI_CODING_AGENT_DIR` before extensions load, terminal resume (OSC 7577)
+  reads the branch at every `session_start`, and the
+  `modelRegistry.runtime` reach-throughs hold (model-runtime.js and
+  model-registry.js byte-identical).
 - **Rate-limit reset from response headers** (`docs/plans/2026-11-27-provider-response-rate-limit.md`,
   proposed, after 2.0.0). Step 1 is a spike with a stop condition: no usable
   reset header on OpenRouter or Mistral closes the plan with no behaviour change.
@@ -645,8 +654,9 @@ Pick up in a later round, each as its own plan where noted (§11):
   step 4 live phase open). Trigger widened 2026-11-24 (owner): every host
   upgrade re-runs the router-shape spike and the retry matrix (AGENTS §10).
   Run 2026-11-27 on Pi 1.6.1: both gates exit 0 against the recorded 1.6.0
-  baselines (`docs/research/2026-11-27-pi-1.6.1-alignment.md`). Pi 1.7.0 is
-  not run yet (see the 1.7.0 entry below).
+  baselines (`docs/research/2026-11-27-pi-1.6.1-alignment.md`). Run again
+  2026-11-28 on Pi 1.7.0: both gates exit 0 against the same 1.6.0 baselines
+  (`docs/research/2026-11-28-pi-1.7.0-alignment.md`).
 - **Felt quality vs. benchmark ranking** (2026-10-31 observation): needs its
   own plan — how owner ratings per model and task type enter the ranking
   (user layer, allowed per ADR-0025 §2C) without model names in shipped code.
@@ -662,9 +672,9 @@ Pick up in a later round, each as its own plan where noted (§11):
   - §1 whole-range review: DONE. Round 1 on 2026-11-08 (PR #128); round 2 on
     2026-11-13 over v1.6.1..main (PR #170, 0 Critical; every finding dispositioned
     in `docs/research/2026-11-13-release-review-2_0_0.md`).
-  - Audit and pins: `npm audit` 0 findings (2026-11-13, not re-run for this
-    update); pi devDependencies pinned to exactly
-    1.6.1 = installed CLI (PR #214, 2026-11-27; a 1.7.0 round is still open);
+  - Audit and pins: `npm audit` 0 findings (re-run 2026-11-28); pi
+    devDependencies pinned to exactly
+    1.7.0 = installed CLI (PR #218, 2026-11-28);
     shipped `log_level: "warn"`; 0 open Dependabot alerts (2026-11-27).
   - Status 2026-11-27: `package.json` is still `2.0.0-SNAPSHOT`; the CHANGELOG
     section is still `[2.0.0-SNAPSHOT]` (not cut to `[2.0.0]`); npm `latest` for
@@ -684,9 +694,10 @@ Pick up in a later round, each as its own plan where noted (§11):
     for `laya-router-v1.0.0`);
     (3) rename `classifier_laya` → `integrations.laya` — DONE 2026-11-12 (PR #166);
     (4) `~/.laya-ft` fallback label migration — DONE 2026-11-13.
-  - Open before a release proposal: the router version named explicitly and the
-    sole-classifier closure. The sidecar no longer has a version of its own
-    (2026-11-16).
+  - Open before a release proposal: the router version named explicitly
+    (AGENTS.md §1). The sole-classifier closure is done (ADR 0035, 2026-11-18);
+    the r2 weights publish keeps its own §1 approval; the sidecar no longer
+    has a version of its own (2026-11-16).
   Tag, GitHub Release and npm publish are each a separate explicit owner approval
   that names the concrete version (AGENTS.md §1). Nothing in this list implies them.
 
@@ -764,4 +775,4 @@ None of them blocks the Laya release gate.
 
 ---
 
-*Last updated: 2026-11-27*
+*Last updated: 2026-11-28*
